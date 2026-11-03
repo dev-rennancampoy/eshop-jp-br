@@ -57,6 +57,14 @@ function baseFirst(titleId: string | null | undefined, platform: string, regular
 const compareTuples = (a: number[], b: number[]) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 
 /**
+ * Id do jogo no site. A "Nintendo Switch 2 Edition" tem o mesmo Title ID do jogo de Switch 1
+ * (é o mesmo app), mas é outro produto com outro preço: vira um jogo à parte, "<Title ID>-S2".
+ */
+function productId(titleId: string, platform: string): string {
+  return platform === 'switch2' && platformOf(titleId) === 'switch' ? `${titleId}-S2` : titleId;
+}
+
+/**
  * Casa cada jogo JP com no máximo um BR pela chave, só quando o par é único dos dois lados.
  * Chaves com mais de um candidato (ex.: duas edições com o mesmo nome) ficam de fora.
  */
@@ -183,7 +191,7 @@ async function main(): Promise<void> {
   for (const nsuid of [...brNsuids].sort((a, b) => compareTuples(brOrder(a), brOrder(b)))) {
     const t = tdbBr.get(nsuid);
     const s = storeByNsuid.get(nsuid);
-    const id = t?.titleId ?? `br-${nsuid}`;
+    const id = t?.titleId ? productId(t.titleId, brPlatform(nsuid)) : `br-${nsuid}`;
     if (games.has(id)) continue; // outro produto com o mesmo Title ID já ficou com a vaga (ver baseFirst)
     brIdByNsuid.set(nsuid, id);
     games.set(id, {
@@ -231,7 +239,8 @@ async function main(): Promise<void> {
   // 1) Title ID
   for (const g of jpGames) {
     const titleId = tdbJp.get(g.nsuid)?.titleId;
-    if (isFreeBr(titleId)) attach(g, titleId);
+    const id = titleId ? productId(titleId, g.platform) : null;
+    if (isFreeBr(id)) attach(g, id);
   }
   const byTitleId = jpIdByNsuid.size;
 
@@ -243,7 +252,10 @@ async function main(): Promise<void> {
   }
   const byAlias = jpIdByNsuid.size - byTitleId;
 
-  const freeBr = () => [...games.values()].filter((g) => isFreeBr(g.id));
+  // Nas regras aproximadas (nome, editora + data), só entram jogos com preço no Brasil: um app
+  // sem preço (art book, trilha sonora) da mesma editora e data deixaria o par ambíguo.
+  const brPriced = new Set(brPrices.map((p) => p.gameId));
+  const freeBr = () => [...games.values()].filter((g) => isFreeBr(g.id) && brPriced.has(g.id));
   const notSame = new Set(NOT_SAME.map(([jpNsuid, brNsuid]) => `${jpNsuid}|${brNsuid}`));
   const allowed = (g: JpGame, b: GameRow) => !notSame.has(`${g.nsuid}|${b.nsuidBr}`);
 
@@ -280,7 +292,7 @@ async function main(): Promise<void> {
   // 5) O resto só existe no Japão
   for (const g of unmatched()) {
     const tdb = tdbJp.get(g.nsuid);
-    const id = tdb?.titleId ?? `jp-${g.nsuid}`;
+    const id = tdb?.titleId ? productId(tdb.titleId, g.platform) : `jp-${g.nsuid}`;
     if (games.has(id)) continue; // outra edição do mesmo Title ID já ficou com a vaga
     games.set(id, {
       id,

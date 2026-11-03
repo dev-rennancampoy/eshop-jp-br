@@ -62,12 +62,15 @@ const GENERIC_WORDS = new Set(
 );
 
 /**
- * Se o nome japonês tem palavras em inglês ("Curse Warrior"), alguma delas precisa estar no nome
- * brasileiro. Nome só em japonês (ou só com termos genéricos como "Edition") passa direto.
+ * Se o nome japonês tem um nome em inglês ("Curse Warrior"), alguma das palavras precisa estar no
+ * nome brasileiro. Nome só em japonês, com termos genéricos ("Edition") ou com pouco inglês passa direto.
  */
 export function sharesLatinWords(jpName: string, brName: string): boolean {
-  const words = (jpName.replace(/[™®©]/g, '').normalize('NFKC').toLowerCase().match(/[a-z]{3,}/g) ?? []).filter((w) => !GENERIC_WORDS.has(w));
-  if (!words.length) return true;
+  const words = (jpName.replace(/[™®©]/g, '').normalize('NFKC').toLowerCase().match(/[a-z]{3,}/g) ?? []).filter(
+    (w) => !GENERIC_WORDS.has(w),
+  );
+  // Pouco inglês (ex.: o "Let's" de "牧場物語 Let's！…") não é um nome em inglês para comparar.
+  if (words.join('').length < 6) return true;
   const br = brName.replace(/[™®©]/g, '').normalize('NFKC').toLowerCase().replace(/[^a-z]/g, '');
   return words.some((w) => br.includes(w));
 }
