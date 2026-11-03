@@ -20,14 +20,24 @@ Não há dependências de runtime: Node 22.18+ roda TypeScript direto e já traz
 
 | Dado | Fonte |
 | --- | --- |
-| Catálogo e preços do Japão | `search.nintendo.jp` (busca oficial, já traz preço cheio, preço atual e período da promoção) |
-| Catálogo do Brasil | [blawar/titledb](https://github.com/blawar/titledb) (`BR.pt.json`) |
-| Preços do Brasil | `api.ec.nintendo.com/v1/price` (API pública do eShop, 50 jogos por chamada) |
+| Catálogo e preços do Japão | `search.nintendo.jp` (busca oficial, já traz preço cheio, preço atual, promoção, editora e lançamento) |
+| Catálogo do Brasil | [blawar/titledb](https://github.com/blawar/titledb) (`BR.pt.json`) + busca do nintendo.com/pt-br (Algolia, chave pública de busca do site), que cobre lançamentos recentes e Switch 2 |
+| Preços do Brasil | `api.ec.nintendo.com/v1/price` (API pública do eShop, 50 jogos por chamada). Se um lote falhar, vale o preço da busca do nintendo.com |
+| Data de lançamento (BR) | titledb `US.en.json`: o nsuid das Américas é o mesmo, e a data do catálogo BR de jogos antigos é a de entrada na eShop brasileira |
 | Câmbio JPY→BRL | AwesomeAPI, com fallback no ExchangeRate-API |
 | Miniaturas | `wsrv.nl` redimensiona as imagens do eShop (~1 MB → ~15 KB) |
 
-O mesmo jogo tem nsuids diferentes em cada país. O que liga os dois é o **Title ID** do Switch,
-que vem do titledb (`JP.ja.json` e `BR.pt.json`).
+### Como o mesmo jogo é reconhecido nos dois países
+
+O nsuid é diferente em cada país. O crawler tenta, em ordem, e só aceita pares únicos dos dois lados:
+
+1. **Title ID** do Switch (titledb `JP.ja.json` e `BR.pt.json`): a grande maioria.
+2. **Apelidos** em `src/aliases.ts`: Title ID diferente e nome em japonês (ex.: Persona 5 Royal).
+3. **Mesmo nome e plataforma**: lançamentos que o titledb ainda não tem (ex.: FINAL FANTASY VII REBIRTH).
+4. **Mesma editora japonesa grande + plataforma + lançamento (±1 dia)**: jogos com nome em japonês
+   (ex.: ドンキーコング バナンザ = Donkey Kong Bananza). Só editoras mapeadas em `src/matching.ts`.
+
+Se aparecer um par errado no site, adicione-o em `NOT_SAME` (`src/aliases.ts`). Se faltar um par, em `ALIASES`.
 
 ### Regras de "melhor preço"
 
@@ -46,8 +56,8 @@ Para ativar: em *Settings → Pages*, escolha **Source: GitHub Actions**. No pla
 
 ## Limitações conhecidas
 
-- O catálogo brasileiro depende do titledb. Lançamentos muito recentes (principalmente de Switch 2) podem demorar a aparecer.
-- Jogos sem Title ID no titledb não são casados entre os países e aparecem como exclusivos de um deles.
+- Jogos que não caem em nenhuma das regras acima (Title ID diferente, nome em japonês e editora não mapeada)
+  aparecem como exclusivos de um dos países até ganharem um apelido.
 - `api.ec.nintendo.com` recusa conexões de algumas redes. Quando isso acontece, o crawl mantém os últimos preços do Brasil
   e o site avisa.
 - Workflows agendados de repositórios públicos são pausados pelo GitHub depois de 60 dias sem commits.

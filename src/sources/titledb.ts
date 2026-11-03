@@ -12,7 +12,7 @@ import { fetchWithRetry } from '../http.ts';
 
 const BASE = 'https://raw.githubusercontent.com/blawar/titledb/master';
 
-export type TitleDbFile = 'BR.pt.json' | 'JP.ja.json';
+export type TitleDbFile = 'BR.pt.json' | 'JP.ja.json' | 'US.en.json';
 
 export type TitleDbGame = {
   nsuid: string;

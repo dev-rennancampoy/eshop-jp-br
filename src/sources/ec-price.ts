@@ -72,7 +72,13 @@ export async function fetchEcPrices(
   country: string,
   lang: string,
   nsuids: string[],
-): Promise<{ prices: EcPrice[]; failedBatches: number; batches: number; firstError: string | null }> {
+): Promise<{
+  prices: EcPrice[];
+  failedBatches: number;
+  failedNsuids: string[];
+  batches: number;
+  firstError: string | null;
+}> {
   let pending: string[][] = [];
   for (let i = 0; i < nsuids.length; i += BATCH) pending.push(nsuids.slice(i, i + BATCH));
   const total = pending.length;
@@ -112,5 +118,5 @@ export async function fetchEcPrices(
     pending = failed;
   }
 
-  return { prices, failedBatches: pending.length, batches: total, firstError };
+  return { prices, failedBatches: pending.length, failedNsuids: pending.flat(), batches: total, firstError };
 }

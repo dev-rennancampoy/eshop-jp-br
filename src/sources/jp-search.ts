@@ -10,7 +10,8 @@ type JpItem = {
   title: string | null;
   hard: string | null;
   maker: string | null;
-  pdate: string | null;
+  pdate: string | null; // quando entrou na loja (pré-venda), não o lançamento
+  sdate: string | null; // lançamento, "2025.7.17"
   iurl: string | null;
   price: number | null;
   current_price: number | null;
@@ -33,6 +34,13 @@ export type JpGame = {
   saleStart: string | null;
   saleEnd: string | null;
 };
+
+/** "2025.7.17" -> "2025-07-17" */
+function releaseDate(it: JpItem): string | null {
+  const m = it.sdate?.match(/^(\d{4})\.(\d{1,2})\.(\d{1,2})$/);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  return it.pdate ? it.pdate.slice(0, 10) : null;
+}
 
 /** "2026-11-15 23:59:59" (horário de Tóquio) -> ISO UTC */
 function jstToIso(s: string | null): string | null {
@@ -64,7 +72,7 @@ function toGame(it: JpItem): JpGame | null {
     name,
     platform: it.hard === '05_BEE' ? 'switch2' : 'switch',
     publisher: it.maker,
-    releaseDate: it.pdate ? it.pdate.slice(0, 10) : null,
+    releaseDate: releaseDate(it),
     image: it.iurl ? `https://img-eshop.cdn.nintendo.net/i/${it.iurl}.jpg` : null,
     regular,
     current,

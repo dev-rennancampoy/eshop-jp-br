@@ -2,8 +2,11 @@
 //   npm run crawl
 import type { DatabaseSync } from 'node:sqlite';
 import { openDb, setMeta, transaction, type Region } from './db.ts';
+import { ALIASES, NOT_SAME } from './aliases.ts';
 import { describeError } from './http.ts';
-import { fetchEcPrices } from './sources/ec-price.ts';
+import { brPublisherGroup, jpPublisherGroup, nameKey, releaseKeys, sharesLatinWords } from './matching.ts';
+import { fetchBrStore } from './sources/br-store.ts';
+import { fetchEcPrices, type EcPrice } from './sources/ec-price.ts';
 import { fetchJpyBrl } from './sources/fx.ts';
 import { fetchJpCatalog, type JpGame } from './sources/jp-search.ts';
 import { loadTitleDb } from './sources/titledb.ts';
@@ -33,6 +36,23 @@ type PriceRow = {
 
 /** Title IDs de Switch 2 começam com 04; os de Switch 1, com 01. */
 const platformOf = (titleId: string) => (titleId.startsWith('04') ? 'switch2' : 'switch');
+
+/**
+ * Casa cada jogo JP com no máximo um BR pela chave, só quando o par é único dos dois lados.
+ * Chaves com mais de um candidato (ex.: duas edições com o mesmo nome) ficam de fora.
+ */
+function uniquePairs<J, B>(jp: J[], br: B[], jpKeys: (j: J) => string[], brKeys: (b: B) => string[]): [J, B][] {
+  const brByKey = new Map<string, B[]>();
+  for (const b of br) for (const k of brKeys(b)) brByKey.set(k, [...(brByKey.get(k) ?? []), b]);
+  const proposals: [J, B][] = [];
+  for (const j of jp) {
+    const cands = new Set(jpKeys(j).flatMap((k) => brByKey.get(k) ?? []));
+    if (cands.size === 1) proposals.push([j, [...cands][0]]);
+  }
+  const uses = new Map<B, number>();
+  for (const [, b] of proposals) uses.set(b, (uses.get(b) ?? 0) + 1);
+  return proposals.filter(([, b]) => uses.get(b) === 1);
+}
 
 const t0 = Date.now();
 const log = (msg: string) => console.log(`[${((Date.now() - t0) / 1000).toFixed(1).padStart(5)}s] ${msg}`);
@@ -90,40 +110,65 @@ async function main(): Promise<void> {
   log('titledb JP (nsuid -> Title ID e ícone)...');
   const tdbJp = await loadTitleDb('JP.ja.json');
   log(`  ${tdbJp.size} jogos`);
+  log('titledb US (data de lançamento)...');
+  const usReleaseDates = new Map<string, string>();
+  for (const g of (await loadTitleDb('US.en.json')).values()) if (g.releaseDate) usReleaseDates.set(g.nsuid, g.releaseDate);
+  log(`  ${usReleaseDates.size} datas`);
 
   log('Catálogo + preços JP (search.nintendo.jp)...');
   const jp = await fetchJpCatalog();
   log(`  ${jp.games.length} de ${jp.total} jogos à venda`);
 
-  log(`Preços BR (api.ec.nintendo.com, ${Math.ceil(tdbBr.size / 50)} lotes)...`);
-  const br = await fetchEcPrices('BR', 'pt', [...tdbBr.keys()]);
-  const brOk = br.failedBatches === 0;
-  if (br.failedBatches === br.batches) {
-    console.warn(`  !! API de preços inacessível (${br.firstError}). Preços BR anteriores foram mantidos.`);
-  } else {
-    log(`  ${br.prices.length} preços${brOk ? '' : ` (${br.failedBatches} lotes falharam: ${br.firstError})`}`);
-  }
+  log('Catálogo BR (busca do nintendo.com)...');
+  const store = await fetchBrStore();
+  log(`  ${store.games.length} jogos${store.truncated ? ` (${store.truncated} fatias passaram de 1000 e vieram incompletas)` : ''}`);
 
-  // --- Junta JP e BR pelo Title ID ---
+  // Catálogo BR = titledb ∪ nintendo.com. O nsuid é o mesmo nos dois; só o titledb traz o Title ID.
+  const storeByNsuid = new Map(store.games.map((g) => [g.nsuid, g]));
+  const brNsuids = [...new Set([...tdbBr.keys(), ...storeByNsuid.keys()])];
+
+  log(`Preços BR (api.ec.nintendo.com, ${Math.ceil(brNsuids.length / 50)} lotes)...`);
+  const br = await fetchEcPrices('BR', 'pt', brNsuids);
+  const brOk = br.failedBatches === 0;
+  const brPriceByNsuid = new Map<string, EcPrice>(br.prices.map((p) => [p.nsuid, p]));
+  // Lotes que falharam: fica o preço que a busca do nintendo.com mostra.
+  let fallback = 0;
+  for (const nsuid of br.failedNsuids) {
+    const p = storeByNsuid.get(nsuid)?.price;
+    if (p) {
+      brPriceByNsuid.set(nsuid, { nsuid, status: 'onsale', ...p });
+      fallback++;
+    }
+  }
+  if (br.failedBatches) {
+    const why = br.failedBatches === br.batches ? 'API de preços inacessível' : `${br.failedBatches} lotes falharam`;
+    console.warn(`  !! ${why} (${br.firstError}). ${fallback} preços vieram da busca do nintendo.com.`);
+  }
+  log(`  ${brPriceByNsuid.size} preços`);
+
+  // --- Jogos do Brasil ---
   const games = new Map<string, GameRow>();
   const brPrices: PriceRow[] = [];
   const jpPrices: PriceRow[] = [];
-  const brPriceByNsuid = new Map(br.prices.map((p) => [p.nsuid, p]));
 
   const brIdByNsuid = new Map<string, string>();
-  for (const g of tdbBr.values()) {
-    const id = g.titleId ?? `br-${g.nsuid}`;
+  for (const nsuid of brNsuids) {
+    const t = tdbBr.get(nsuid);
+    const s = storeByNsuid.get(nsuid);
+    const id = t?.titleId ?? `br-${nsuid}`;
     if (games.has(id)) continue; // mesma Title ID em dois nsuids (raro): fica o primeiro
-    brIdByNsuid.set(g.nsuid, id);
+    brIdByNsuid.set(nsuid, id);
     games.set(id, {
       id,
-      name: g.name,
+      name: (s?.name ?? t?.name) as string,
       nameJp: null,
-      publisher: g.publisher,
-      platform: g.titleId ? platformOf(g.titleId) : 'switch',
-      releaseDate: g.releaseDate,
-      image: g.image,
-      nsuidBr: g.nsuid,
+      publisher: s?.publisher ?? t?.publisher ?? null,
+      platform: s?.platform ?? (t?.titleId ? platformOf(t.titleId) : 'switch'),
+      // No catálogo BR (titledb e nintendo.com/pt-br) a data de jogos antigos é a de entrada na
+      // eShop brasileira, aberta no fim de 2020. A dos EUA (mesmo nsuid) é a de lançamento.
+      releaseDate: usReleaseDates.get(nsuid) ?? s?.releaseDate ?? t?.releaseDate ?? null,
+      image: t?.image ?? s?.image ?? null,
+      nsuidBr: nsuid,
       nsuidJp: null,
     });
   }
@@ -132,42 +177,103 @@ async function main(): Promise<void> {
     if (p) brPrices.push({ gameId: id, region: 'BR', ...p });
   }
 
+  // --- Casa os jogos do Japão com os do Brasil ---
   // Mesmo Title ID em mais de um produto JP (ex.: jogo base e "Nintendo Switch 2 Edition"):
-  // vence o da plataforma do Title ID e, entre esses, o mais barato. O loop abaixo fica com o primeiro.
+  // vence o da plataforma do Title ID e, entre esses, o mais barato (o primeiro da lista ganha).
   const rank = (g: JpGame) => {
     const titleId = tdbJp.get(g.nsuid)?.titleId;
     return titleId && platformOf(titleId) === g.platform ? 0 : 1;
   };
   const jpGames = [...jp.games].sort((a, b) => rank(a) - rank(b) || a.current - b.current);
 
-  let matched = 0;
+  const jpIdByNsuid = new Map<string, string>();
+  const isFreeBr = (id: string | null | undefined): id is string => {
+    const g = id ? games.get(id) : undefined;
+    return !!g && g.nsuidBr != null && g.nsuidJp == null;
+  };
+  const attach = (g: JpGame, id: string) => {
+    const e = games.get(id) as GameRow;
+    e.nameJp = g.name;
+    e.nsuidJp = g.nsuid;
+    e.platform = g.platform;
+    // Ícone quadrado do titledb; a imagem da busca JP é um retrato 1080x1920.
+    e.image ??= tdbJp.get(g.nsuid)?.image ?? g.image;
+    e.releaseDate ??= g.releaseDate;
+    jpIdByNsuid.set(g.nsuid, id);
+  };
+  const unmatched = () => jpGames.filter((g) => !jpIdByNsuid.has(g.nsuid));
+
+  // 1) Title ID
   for (const g of jpGames) {
+    const titleId = tdbJp.get(g.nsuid)?.titleId;
+    if (isFreeBr(titleId)) attach(g, titleId);
+  }
+  const byTitleId = jpIdByNsuid.size;
+
+  // 2) Apelidos mantidos à mão (Title ID diferente + nome em japonês)
+  const aliasBr = new Map(ALIASES.map(([jpNsuid, brNsuid]) => [jpNsuid, brNsuid]));
+  for (const g of unmatched()) {
+    const id = brIdByNsuid.get(aliasBr.get(g.nsuid) ?? '');
+    if (isFreeBr(id)) attach(g, id);
+  }
+  const byAlias = jpIdByNsuid.size - byTitleId;
+
+  const freeBr = () => [...games.values()].filter((g) => isFreeBr(g.id));
+  const notSame = new Set(NOT_SAME.map(([jpNsuid, brNsuid]) => `${jpNsuid}|${brNsuid}`));
+  const allowed = (g: JpGame, b: GameRow) => !notSame.has(`${g.nsuid}|${b.nsuidBr}`);
+
+  // 3) Mesmo nome e plataforma (lançamentos que o titledb ainda não tem, ex.: FINAL FANTASY VII REBIRTH)
+  const keys = (k: string | null) => (k ? [k] : []);
+  for (const [g, b] of uniquePairs(unmatched(), freeBr(), (g) => keys(nameKey(g.name, g.platform)), (b) =>
+    keys(nameKey(b.name, b.platform)),
+  )) {
+    if (allowed(g, b)) attach(g, b.id);
+  }
+  const byName = jpIdByNsuid.size - byTitleId - byAlias;
+
+  // 4) Mesma editora japonesa grande, plataforma e data de lançamento (nome em japonês no JP,
+  //    ex.: ドンキーコング バナンザ = Donkey Kong Bananza)
+  for (const [g, b] of uniquePairs(
+    unmatched(),
+    freeBr(),
+    (g) => {
+      const group = jpPublisherGroup(g.publisher);
+      return group ? releaseKeys(group, g.platform, g.releaseDate) : [];
+    },
+    (b) => {
+      const group = brPublisherGroup(b.publisher);
+      return group ? releaseKeys(group, b.platform, b.releaseDate, 0) : [];
+    },
+  )) {
+    if (allowed(g, b) && sharesLatinWords(g.name, b.name)) attach(g, b.id);
+  }
+  const byRelease = jpIdByNsuid.size - byTitleId - byAlias - byName;
+  log(
+    `Casados JP <-> BR: ${byTitleId} por Title ID, ${byAlias} por apelido, ${byName} por nome, ${byRelease} por editora + lançamento`,
+  );
+
+  // 5) O resto só existe no Japão
+  for (const g of unmatched()) {
     const tdb = tdbJp.get(g.nsuid);
     const id = tdb?.titleId ?? `jp-${g.nsuid}`;
-    // Ícone quadrado do titledb; a imagem da busca JP é um retrato 1080x1920.
-    const image = tdb?.image ?? g.image;
-    const existing = games.get(id);
-    if (existing?.nsuidJp) continue;
-    if (existing) {
-      matched++;
-      existing.nameJp = g.name;
-      existing.nsuidJp = g.nsuid;
-      existing.platform = g.platform;
-      existing.image ??= image;
-      existing.releaseDate ??= g.releaseDate;
-    } else {
-      games.set(id, {
-        id,
-        name: g.name,
-        nameJp: g.name,
-        publisher: g.publisher,
-        platform: g.platform,
-        releaseDate: g.releaseDate,
-        image,
-        nsuidBr: null,
-        nsuidJp: g.nsuid,
-      });
-    }
+    if (games.has(id)) continue; // outra edição do mesmo Title ID já ficou com a vaga
+    games.set(id, {
+      id,
+      name: g.name,
+      nameJp: g.name,
+      publisher: g.publisher,
+      platform: g.platform,
+      releaseDate: g.releaseDate,
+      image: tdb?.image ?? g.image,
+      nsuidBr: null,
+      nsuidJp: g.nsuid,
+    });
+    jpIdByNsuid.set(g.nsuid, id);
+  }
+
+  for (const g of jpGames) {
+    const id = jpIdByNsuid.get(g.nsuid);
+    if (!id) continue;
     jpPrices.push({
       gameId: id,
       region: 'JP',
@@ -179,17 +285,16 @@ async function main(): Promise<void> {
       status: 'onsale',
     });
   }
-  log(`${matched} jogos casados JP <-> BR pelo Title ID`);
 
   const { brChanged, jpChanged } = transaction(db, () => {
     saveGames(db, games.values(), now);
-    const brChanged = br.prices.length ? savePrices(db, 'BR', brPrices, now, brOk) : 0;
+    const brChanged = brPrices.length ? savePrices(db, 'BR', brPrices, now, brOk) : 0;
     const jpChanged = savePrices(db, 'JP', jpPrices, now, true);
     setMeta(db, 'fx_jpy_brl', String(fx.rate));
     setMeta(db, 'fx_source', fx.source);
     setMeta(db, 'fx_at', fx.at);
     setMeta(db, 'crawled_at', now);
-    if (br.prices.length) setMeta(db, 'br_crawled_at', now);
+    if (brPrices.length) setMeta(db, 'br_crawled_at', now);
     setMeta(db, 'jp_crawled_at', now);
     return { brChanged, jpChanged };
   });
