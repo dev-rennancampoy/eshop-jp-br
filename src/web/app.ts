@@ -64,9 +64,14 @@ function parseHome(qs: URLSearchParams): ListOptions {
   };
 }
 
-function currentHome(): ListOptions {
+/** Parâmetros da URL da home: só os filtros que o usuário mudou (os padrões não vão para a URL). */
+function homeParams(): URLSearchParams {
   const [, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
-  return parseHome(new URLSearchParams(query));
+  return new URLSearchParams(query);
+}
+
+function currentHome(): ListOptions {
+  return parseHome(homeParams());
 }
 
 function renderHome(): void {
@@ -144,8 +149,12 @@ searchInput.addEventListener('input', () => {
   clearTimeout(searchTimer);
   searchTimer = window.setTimeout(() => {
     const onHome = !location.hash.startsWith('#/jogo/');
+    // Leva para a busca só os filtros que o usuário escolheu; o resto assume os padrões da busca
+    // (todos os jogos, qualquer país), e não os da home (só promoções nos dois países).
+    const qs = onHome ? homeParams() : new URLSearchParams();
+    qs.set('q', searchInput.value.trim());
     // Digitar não deve empilhar uma entrada de histórico por letra.
-    navigateHome({ ...(onHome ? currentHome() : DEFAULTS), q: searchInput.value.trim() }, onHome);
+    navigateHome(parseHome(qs), onHome);
   }, 250);
 });
 (document.getElementById('search') as HTMLFormElement).addEventListener('submit', (e) => {
