@@ -15,10 +15,13 @@
   <form class="search" id="search" role="search">
     <input id="q" type="search" name="q" autocomplete="off" placeholder="Buscar jogo (português, inglês ou japonês)" aria-label="Buscar jogo">
   </form>
+  <label class="wise" title="Preços do Japão com o spread da Wise (~0,7%) em vez do spread do cartão de crédito (~4%). O IOF de 3,5% vale nos dois.">
+    <input type="checkbox" id="wise"> Cliente Wise
+  </label>
   <span class="status" id="status"></span>
 </div></header>
 <main class="wrap" id="app"><div class="empty">Carregando preços…</div></main>
-<footer class="wrap">Preços do eShop Nintendo do Brasil e do Japão. Valores do Japão convertidos pela cotação comercial do dia, mais a taxa extra configurada. Não afiliado à Nintendo.</footer>
+<footer class="wrap">Preços do eShop Nintendo do Brasil e do Japão. Valores do Japão convertidos pela cotação comercial do dia, mais o spread do cartão de crédito (ou da Wise) e o IOF de 3,5%. Não afiliado à Nintendo.</footer>
 <script type="module" src="app.js"></script>
 </body>
 </html>

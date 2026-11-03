@@ -1,24 +1,36 @@
 // SPA com rotas por hash (funciona em qualquer hospedagem estática, inclusive em subpasta):
 //   #/?q=zelda&ordem=preco   home / busca
 //   #/jogo/<id>              página do jogo
-import { SORTS_LIST, TOP_OPTIONS, filterDeals, normalizeSearch, toDeal, type Deal, type ListOptions } from './deals.ts';
+import {
+  SORTS_LIST,
+  TOP_OPTIONS,
+  filterDeals,
+  jpCost,
+  normalizeSearch,
+  toDeal,
+  type Deal,
+  type JpCost,
+  type ListOptions,
+} from './deals.ts';
 import type { DataFile, HistoryShard } from './types.ts';
 import { historyShard } from './types.ts';
 import { DEFAULTS, SEARCH_DEFAULTS, fmtDateTime, gameView, historyView, homeHref, homeView, money, notFoundView } from './views.ts';
 
 const PAGE = 48;
 const FEATURED = 12;
-const FEE_KEY = 'eshop-jp-br:taxa';
+const WISE_KEY = 'eshop-jp-br:wise';
 
 const app = document.getElementById('app') as HTMLElement;
 const searchInput = document.getElementById('q') as HTMLInputElement;
+const wiseInput = document.getElementById('wise') as HTMLInputElement;
 const status = document.getElementById('status') as HTMLElement;
+wiseInput.checked = readWise();
 
 let data: DataFile;
 let searchIndex: string[] = [];
 let deals: Deal[] = [];
 let byId = new Map<string, Deal>();
-let feePct = 0;
+let cost: JpCost;
 const historyCache = new Map<string, Promise<HistoryShard>>();
 
 // Estado da home para voltar do jogo sem perder a posição.
@@ -26,29 +38,29 @@ let homeKey = '';
 let shown = PAGE;
 let homeScroll = 0;
 
-function readFee(fallback: number): number {
+function readWise(): boolean {
   try {
-    const v = localStorage.getItem(FEE_KEY);
-    return v != null && Number.isFinite(Number(v)) ? Number(v) : fallback;
+    return localStorage.getItem(WISE_KEY) === '1';
   } catch {
-    return fallback;
+    return false;
   }
 }
 
-function saveFee(v: number): void {
+function saveWise(v: boolean): void {
   try {
-    localStorage.setItem(FEE_KEY, String(v));
+    localStorage.setItem(WISE_KEY, v ? '1' : '0');
   } catch {
     /* modo anônimo etc. */
   }
 }
 
-const factor = () => data.fx.rate * (1 + feePct / 100);
-
 function computeDeals(): void {
-  const k = factor();
-  deals = data.games.map((g, i) => toDeal(g, k, searchIndex[i]));
+  cost = jpCost(data.fx.rate, data.fees, wiseInput.checked);
+  deals = data.games.map((g, i) => toDeal(g, cost.factor, searchIndex[i]));
   byId = new Map(deals.map((d) => [d.game.id, d]));
+  status.textContent = `Atualizado ${fmtDateTime(data.crawledAt)} · ¥100 = ${money(data.fx.rate * 100)} (${money(
+    cost.factor * 100,
+  )} com spread e IOF)`;
 }
 
 function parseHome(qs: URLSearchParams): ListOptions {
@@ -94,7 +106,6 @@ function renderHome(): void {
     opts,
     list,
     shown,
-    feePct,
     hasBr: !!data.brCrawledAt,
     featured,
     featuredHref: homeHref(featuredOpts),
@@ -123,8 +134,7 @@ function renderGame(id: string): void {
   app.innerHTML = gameView({
     d,
     fx: data.fx,
-    feePct,
-    factor: factor(),
+    cost,
     crawledAt: data.crawledAt,
     hasBr: !!data.brCrawledAt,
     backHref: homeKey || '#/',
@@ -134,7 +144,7 @@ function renderGame(id: string): void {
   loadHistory(id)
     .then((h) => {
       const el = document.getElementById('history');
-      if (el && location.hash.startsWith('#/jogo/')) el.innerHTML = historyView(h[id] ?? [], factor());
+      if (el && location.hash.startsWith('#/jogo/')) el.innerHTML = historyView(h[id] ?? [], cost.factor);
     })
     .catch(() => {});
 }
@@ -178,18 +188,8 @@ searchInput.addEventListener('input', () => {
 app.addEventListener('change', (e) => {
   const form = (e.target as HTMLElement).closest('form#filters') as HTMLFormElement | null;
   if (!form) return;
-  const fd = new FormData(form);
-  const fee = Number(fd.get('taxa'));
-  if ((e.target as HTMLInputElement).name === 'taxa') {
-    feePct = Number.isFinite(fee) && fee >= 0 ? fee : 0;
-    saveFee(feePct);
-    computeDeals();
-    homeKey = '';
-    renderHome();
-    return;
-  }
   const qs = new URLSearchParams();
-  for (const [k, v] of fd) if (k !== 'taxa') qs.set(k, String(v));
+  for (const [k, v] of new FormData(form)) qs.set(k, String(v));
   qs.set('q', currentHome().q);
   navigateHome(parseHome(qs));
 });
@@ -204,6 +204,17 @@ app.addEventListener('click', (e) => {
   }
   // Guarda a posição antes de abrir um jogo.
   if (target.closest('a.card')) homeScroll = window.scrollY;
+});
+
+// Muda o spread de todos os preços japoneses: recalcula e redesenha a tela atual no mesmo lugar.
+wiseInput.addEventListener('change', () => {
+  saveWise(wiseInput.checked);
+  if (!data) return;
+  const y = window.scrollY;
+  homeScroll = y;
+  computeDeals();
+  route();
+  window.scrollTo(0, y);
 });
 
 window.addEventListener('hashchange', route);
@@ -221,10 +232,8 @@ async function main(): Promise<void> {
   }
   // Sem preços do Brasil, "à venda nos dois países" deixaria a home vazia.
   if (!data.brCrawledAt) DEFAULTS.scope = 'qualquer';
-  feePct = readFee(data.defaultFeePct);
   searchIndex = data.games.map((g) => normalizeSearch(`${g.name} ${g.nameJp ?? ''}`));
   computeDeals();
-  status.textContent = `Atualizado ${fmtDateTime(data.crawledAt)} · ¥100 = ${money(data.fx.rate * 100)}`;
   route();
 }
 

@@ -106,7 +106,7 @@ async function main(): Promise<void> {
     crawledAt: getMeta(db, 'crawled_at'),
     brCrawledAt: getMeta(db, 'br_crawled_at'),
     fx: { rate, source: getMeta(db, 'fx_source'), at: getMeta(db, 'fx_at') },
-    defaultFeePct: config.jpExtraFeePct,
+    fees: config.jpFees,
     games: rows.map((r) => ({ ...toRec(r), pop: popRank.get(r.id), trend: trendRank.get(r.id) })),
   };
 

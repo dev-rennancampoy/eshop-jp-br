@@ -1,4 +1,4 @@
-import { TOP_OPTIONS, type Deal, type ListOptions } from './deals.ts';
+import { TOP_OPTIONS, type Deal, type JpCost, type ListOptions } from './deals.ts';
 import type { GameRec, HistoryEntry, Region } from './types.ts';
 
 // ---------- formatação ----------
@@ -97,7 +97,6 @@ export function homeView(p: {
   opts: ListOptions;
   list: Deal[];
   shown: number;
-  feePct: number;
   hasBr: boolean;
   featured: Deal[];
   featuredHref: string;
@@ -146,8 +145,6 @@ export function homeView(p: {
       ['switch', 'Só Switch'],
       ['switch2', 'Só Switch 2'],
     ])}
-    <label class="fee" title="Somado ao preço do Japão: IOF do cartão, ágio do gift card etc.">Taxa JP
-      <input name="taxa" type="number" inputmode="decimal" min="0" max="100" step="0.1" value="${p.feePct}">%</label>
     <span class="count">${list.length.toLocaleString('pt-BR')} jogos</span>
   </form>`;
 
@@ -170,7 +167,7 @@ function storeUrl(region: Region, nsuid: string): string {
     : `https://ec.nintendo.com/apps/${nsuid}/BR`;
 }
 
-function regionBox(region: Region, g: GameRec, factor: number, isBest: boolean, hasBr: boolean): string {
+function regionBox(region: Region, g: GameRec, cost: JpCost, isBest: boolean, hasBr: boolean): string {
   const tuple = region === 'BR' ? g.br : g.jp;
   const nsuid = region === 'BR' ? g.nsuidBr : g.nsuidJp;
   const head = `<h2><span>${FLAG[region]} ${COUNTRY[region]}</span>${isBest ? '<span class="tag">Melhor preço</span>' : ''}</h2>`;
@@ -182,9 +179,21 @@ function regionBox(region: Region, g: GameRec, factor: number, isBest: boolean, 
     return `<div class="region">${head}<div class="na">${why}</div></div>`;
   }
   const [regular, current, saleEnd] = tuple;
-  const toBrl = (v: number) => (region === 'JP' ? v * factor : v);
+  const toBrl = (v: number) => (region === 'JP' ? v * cost.factor : v);
   const rows: string[] = [];
-  if (region === 'JP') rows.push(`<dt>Na moeda local</dt><dd>${yen(current)}</dd>`);
+  if (region === 'JP') {
+    // A conta aberta: câmbio comercial, depois o spread de quem converte, depois o IOF sobre o total.
+    const commercial = current * cost.rate;
+    const spread = commercial * (cost.spreadPct / 100);
+    const iof = (commercial + spread) * (cost.iofPct / 100);
+    const pctFmt = (v: number) => `${v.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
+    rows.push(
+      `<dt>Na moeda local</dt><dd>${yen(current)}</dd>`,
+      `<dt>Câmbio comercial</dt><dd>${money(commercial)}</dd>`,
+      `<dt>Spread ${pctFmt(cost.spreadPct)} (${cost.wise ? 'Wise' : 'cartão de crédito'})</dt><dd>+ ${money(spread)}</dd>`,
+      `<dt>IOF ${pctFmt(cost.iofPct)}</dt><dd>+ ${money(iof)}</dd>`,
+    );
+  }
   rows.push(
     `<dt>Preço cheio</dt><dd>${money(toBrl(regular))}${region === 'JP' ? ` <span class="note">(${yen(regular)})</span>` : ''}</dd>`,
   );
@@ -202,13 +211,12 @@ function regionBox(region: Region, g: GameRec, factor: number, isBest: boolean, 
 export function gameView(p: {
   d: Deal;
   fx: { rate: number; source: string | null; at: string | null };
-  feePct: number;
-  factor: number;
+  cost: JpCost;
   crawledAt: string | null;
   hasBr: boolean;
   backHref: string;
 }): string {
-  const { d, factor } = p;
+  const { d, cost } = p;
   const g = d.game;
 
   let verdict = '';
@@ -237,9 +245,10 @@ export function gameView(p: {
     .map(esc)
     .join(' · ');
 
-  const fxNote = `<p class="fxnote">Câmbio: ¥100 = ${money(p.fx.rate * 100)} (${esc(p.fx.source ?? '')}, ${fmtDateTime(p.fx.at)})${
-    p.feePct ? ` + ${p.feePct}% de taxa extra no preço japonês` : ''
-  }. Preços coletados em ${fmtDateTime(p.crawledAt)}.</p>`;
+  const fxNote = `<p class="fxnote">Câmbio comercial: ¥100 = ${money(p.fx.rate * 100)} (${esc(p.fx.source ?? '')}, ${fmtDateTime(p.fx.at)}).
+    O preço do Japão em reais já inclui spread ${cost.wise ? 'da Wise' : 'do cartão de crédito'} e IOF${
+      cost.wise ? '' : '. Paga com Wise? Marque “Cliente Wise” no topo'
+    }. Preços coletados em ${fmtDateTime(p.crawledAt)}.</p>`;
 
   return `<a class="back" href="${esc(p.backHref)}">← Ofertas</a>
   <section class="hero">
@@ -252,8 +261,8 @@ export function gameView(p: {
     </div>
   </section>
   <section class="regions">
-    ${regionBox('BR', g, factor, d.best === 'BR', p.hasBr)}
-    ${regionBox('JP', g, factor, d.best === 'JP', p.hasBr)}
+    ${regionBox('BR', g, cost, d.best === 'BR', p.hasBr)}
+    ${regionBox('JP', g, cost, d.best === 'JP', p.hasBr)}
   </section>
   ${fxNote}
   <div id="history"></div>`;

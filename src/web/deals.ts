@@ -1,7 +1,7 @@
-// Regras de "melhor preço": o preço japonês é convertido para BRL (com a taxa extra
-// configurável) e comparado ao brasileiro. Empate fica com o Brasil (sem dor de cabeça).
+// Regras de "melhor preço": o preço japonês é convertido para BRL com spread e IOF (ver jpCost)
+// e comparado ao brasileiro. Empate fica com o Brasil (sem dor de cabeça).
 // A economia é sempre medida contra o preço cheio no Brasil, a referência de quem compra daqui.
-import type { GameRec, Platform, Region } from './types.ts';
+import type { GameRec, JpFees, Platform, Region } from './types.ts';
 
 export type Sort = 'desconto' | 'popdesc' | 'preco' | 'economia' | 'fim' | 'populares' | 'alta' | 'novos' | 'nome';
 export const SORTS_LIST: readonly Sort[] = ['desconto', 'popdesc', 'preco', 'economia', 'fim', 'populares', 'alta', 'novos', 'nome'];
@@ -46,7 +46,17 @@ export function normalizeSearch(s: string): string {
     .trim();
 }
 
-/** `factor` = cotação JPY->BRL já com a taxa extra. */
+/** Quanto custa, em reais, pagar em iene: câmbio comercial + spread de quem converte + IOF. */
+export type JpCost = { rate: number; spreadPct: number; iofPct: number; wise: boolean; factor: number };
+
+export function jpCost(rate: number, fees: JpFees, wise: boolean): JpCost {
+  const spreadPct = wise ? fees.wiseSpreadPct : fees.cardSpreadPct;
+  // O IOF incide sobre o valor já convertido pelo banco, ou seja, com o spread.
+  const factor = rate * (1 + spreadPct / 100) * (1 + fees.iofPct / 100);
+  return { rate, spreadPct, iofPct: fees.iofPct, wise, factor };
+}
+
+/** `factor` = reais por iene já com spread e IOF (ver jpCost). */
 export function toDeal(game: GameRec, factor: number, search: string): Deal {
   const brCur = game.br ? game.br[1] : null;
   const brReg = game.br ? game.br[0] : null;

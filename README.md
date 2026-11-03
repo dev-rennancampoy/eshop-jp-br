@@ -42,8 +42,11 @@ Se aparecer um par errado no site, adicione-o em `NOT_SAME` (`src/aliases.ts`). 
 
 ### Regras de "melhor preço"
 
-- O preço japonês é convertido pela cotação do dia, mais a **taxa extra** configurável (IOF, ágio do gift card etc.).
-  Ela pode ser ajustada no próprio site (fica salva no navegador) ou definida como padrão em `JP_TAXA_EXTRA` (em %) no build.
+- O preço japonês em reais é o custo real de pagar em iene: `¥ × câmbio comercial × (1 + spread) × (1 + IOF)`.
+  - IOF de compras internacionais: **3,5%** (cartão e conta global, desde jul/2025).
+  - Spread: **4%** no cartão de crédito comum ou **0,7%** para quem marca **"Cliente Wise"** no topo do site
+    (fica salvo no navegador).
+  - Os percentuais ficam em `src/config.ts` e podem ser trocados no build por `JP_IOF`, `JP_SPREAD_CARTAO` e `JP_SPREAD_WISE`.
 - Em caso de empate, ganha o Brasil.
 - O desconto e a economia são medidos contra o **preço cheio no Brasil**.
 - "Só em promoção" = há promoção em algum dos dois países **e** o melhor preço fica abaixo do preço cheio no Brasil.

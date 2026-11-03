@@ -27,9 +27,12 @@ export type DataFile = {
   crawledAt: string | null;
   brCrawledAt: string | null;
   fx: { rate: number; source: string | null; at: string | null };
-  defaultFeePct: number;
+  fees: JpFees;
   games: GameRec[];
 };
+
+/** Custos de pagar em iene, em % sobre o câmbio comercial (ver config.ts) */
+export type JpFees = { iofPct: number; cardSpreadPct: number; wiseSpreadPct: number };
 
 /** [região, preço cheio, preço atual, quando mudou (ISO)] */
 export type HistoryEntry = [Region, number, number, string];
