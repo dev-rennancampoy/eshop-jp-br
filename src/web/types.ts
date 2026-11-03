@@ -1,0 +1,43 @@
+// Formato dos arquivos gerados pelo build (data.json e h/*.json) e lidos pelo site.
+
+export type Region = 'BR' | 'JP';
+export type Platform = 'switch' | 'switch2';
+
+/** [preço cheio, preço atual, fim da promoção (ISO) ou null], na moeda local: BRL ou JPY */
+export type PriceTuple = [number, number, string | null];
+
+export type GameRec = {
+  id: string;
+  name: string;
+  nameJp?: string;
+  publisher?: string;
+  img?: string;
+  platform: Platform;
+  release?: string;
+  nsuidBr?: string;
+  nsuidJp?: string;
+  br?: PriceTuple;
+  jp?: PriceTuple;
+};
+
+export type DataFile = {
+  generatedAt: string;
+  crawledAt: string | null;
+  brCrawledAt: string | null;
+  fx: { rate: number; source: string | null; at: string | null };
+  defaultFeePct: number;
+  games: GameRec[];
+};
+
+/** [região, preço cheio, preço atual, quando mudou (ISO)] */
+export type HistoryEntry = [Region, number, number, string];
+export type HistoryShard = Record<string, HistoryEntry[]>;
+
+// O histórico fica dividido em arquivos menores para a página do jogo baixar só um pedaço.
+const HISTORY_SHARDS = 64;
+
+export function historyShard(id: string): string {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return (h % HISTORY_SHARDS).toString(16).padStart(2, '0');
+}

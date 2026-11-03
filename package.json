@@ -1,0 +1,20 @@
+{
+  "name": "eshop-jp-br",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Comparador de preços do Nintendo eShop: Japão x Brasil",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "crawl": "node --disable-warning=ExperimentalWarning src/crawl.ts",
+    "build": "node --disable-warning=ExperimentalWarning src/build.ts",
+    "start": "npm run build && node src/serve.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "typescript": "^5.9.2"
+  }
+}
