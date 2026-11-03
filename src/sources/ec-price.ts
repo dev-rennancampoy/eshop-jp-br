@@ -5,6 +5,11 @@ import { describeError, fetchJson, mapLimit } from '../http.ts';
 
 const BASE = 'https://api.ec.nintendo.com/v1/price';
 const BATCH = 50;
+const DELAY_MS = 400; // pausa de cada worker entre chamadas
+const PASSES = 3; // 1ª passada + até 2 repescagens dos lotes que falharam
+const COOLDOWN_MS = 30_000;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 type EcAmount = {
   amount: string;
@@ -68,29 +73,44 @@ export async function fetchEcPrices(
   lang: string,
   nsuids: string[],
 ): Promise<{ prices: EcPrice[]; failedBatches: number; batches: number; firstError: string | null }> {
-  const batches: string[][] = [];
-  for (let i = 0; i < nsuids.length; i += BATCH) batches.push(nsuids.slice(i, i + BATCH));
+  let pending: string[][] = [];
+  for (let i = 0; i < nsuids.length; i += BATCH) pending.push(nsuids.slice(i, i + BATCH));
+  const total = pending.length;
 
+  const prices: EcPrice[] = [];
   let ok = 0;
-  let failedBatches = 0;
   let firstError: string | null = null;
-  const results = await mapLimit(batches, config.priceConcurrency, async (ids) => {
-    // Várias falhas sem nenhum sucesso = API inacessível (bloqueio de rede etc.): não insiste no resto.
-    if (ok === 0 && failedBatches >= 5) {
-      failedBatches++;
-      return [];
-    }
-    const qs = new URLSearchParams({ country, lang, ids: ids.join(',') });
-    try {
-      const res = await fetchJson<EcResponse>(`${BASE}?${qs}`);
-      ok++;
-      return (res.prices ?? []).map(toPrice).filter((p): p is EcPrice => p !== null);
-    } catch (err) {
-      failedBatches++;
-      firstError ??= describeError(err);
-      return [];
-    }
-  });
 
-  return { prices: results.flat(), failedBatches, batches: batches.length, firstError };
+  // A Akamai na frente da API responde 403 quando as chamadas vêm rápidas demais: vai devagar e,
+  // no fim, tenta de novo os lotes que falharam depois de uma pausa, um de cada vez.
+  for (let pass = 0; pass < PASSES && pending.length; pass++) {
+    if (pass > 0) {
+      if (ok === 0) break; // nenhuma chamada passou: API inacessível, não adianta insistir
+      await sleep(COOLDOWN_MS * pass);
+    }
+    const failed: string[][] = [];
+    await mapLimit(pending, pass === 0 ? config.priceConcurrency : 1, async (ids) => {
+      // Várias falhas sem nenhum sucesso = API inacessível (bloqueio de rede etc.): não insiste no resto.
+      if (ok === 0 && failed.length >= 5) {
+        failed.push(ids);
+        return;
+      }
+      const qs = new URLSearchParams({ country, lang, ids: ids.join(',') });
+      try {
+        const res = await fetchJson<EcResponse>(`${BASE}?${qs}`);
+        ok++;
+        for (const t of res.prices ?? []) {
+          const p = toPrice(t);
+          if (p) prices.push(p);
+        }
+      } catch (err) {
+        failed.push(ids);
+        firstError ??= describeError(err);
+      }
+      await sleep(DELAY_MS);
+    });
+    pending = failed;
+  }
+
+  return { prices, failedBatches: pending.length, batches: total, firstError };
 }

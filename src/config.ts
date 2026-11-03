@@ -15,6 +15,6 @@ export const config = {
   port: num('PORT', 3000),
   // % somado ao preço japonês convertido: IOF do cartão, ágio do gift card etc.
   jpExtraFeePct: num('JP_TAXA_EXTRA', 0),
-  priceConcurrency: num('PRICE_CONCURRENCY', 3),
+  priceConcurrency: num('PRICE_CONCURRENCY', 2),
   userAgent: 'eshop-jp-br/0.1 (comparador pessoal de precos)',
 };
