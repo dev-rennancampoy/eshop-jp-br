@@ -1,0 +1,23 @@
+name: Sonda Amazon JP (temporária)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: node scripts/amazon-probe.ts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: amazon-probe
+          path: amazon-probe
+          retention-days: 1
