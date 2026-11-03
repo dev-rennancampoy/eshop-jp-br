@@ -45,6 +45,18 @@ create table if not exists price_history (
 );
 create index if not exists price_history_game on price_history(game_id, region, seen_at);
 
+-- Notas do Metacritic da versão de Switch / Switch 2 (uma linha por jogo, renovada de tempos em tempos)
+create table if not exists metacritic (
+  game_id        text primary key,
+  slug           text,              -- null = jogo não encontrado no Metacritic
+  critic         integer,           -- Metascore (imprensa), 0–100
+  critic_reviews integer,
+  user_score     real,              -- usuários, 0–10
+  user_reviews   integer,
+  from_base      integer not null default 0,  -- 1 = Switch 2 Edition usando a nota do jogo de Switch 1
+  checked_at     text not null
+);
+
 create table if not exists meta (
   key   text primary key,
   value text not null

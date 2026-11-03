@@ -3,8 +3,35 @@
 // A economia é sempre medida contra o preço cheio no Brasil, a referência de quem compra daqui.
 import type { GameRec, JpFees, Platform, Region } from './types.ts';
 
-export type Sort = 'desconto' | 'popdesc' | 'preco' | 'economia' | 'fim' | 'populares' | 'alta' | 'novos' | 'nome';
-export const SORTS_LIST: readonly Sort[] = ['desconto', 'popdesc', 'preco', 'economia', 'fim', 'populares', 'alta', 'novos', 'nome'];
+export type Sort =
+  | 'desconto'
+  | 'popdesc'
+  | 'preco'
+  | 'economia'
+  | 'fim'
+  | 'populares'
+  | 'alta'
+  | 'usuarios'
+  | 'imprensa'
+  | 'novos'
+  | 'nome';
+export const SORTS_LIST: readonly Sort[] = [
+  'desconto',
+  'popdesc',
+  'preco',
+  'economia',
+  'fim',
+  'populares',
+  'alta',
+  'usuarios',
+  'imprensa',
+  'novos',
+  'nome',
+];
+
+/** Filtro por nota do Metacritic: u = usuários (0–10), c = imprensa (0–100). '' = qualquer nota. */
+export type ScoreFilter = '' | 'u7' | 'u8' | 'u9' | 'c75' | 'c85' | 'c90';
+export const SCORE_FILTERS: readonly ScoreFilter[] = ['', 'u7', 'u8', 'u9', 'c75', 'c85', 'c90'];
 export type Filter = 'ofertas' | 'todos';
 export type Scope = 'ambos' | 'qualquer';
 export const TOP_OPTIONS = [100, 500, 1000] as const;
@@ -16,6 +43,7 @@ export type ListOptions = {
   scope: Scope;
   platform: Platform | '';
   top: number; // só os N mais populares; 0 = todos
+  score: ScoreFilter;
 };
 
 export type Deal = {
@@ -128,9 +156,18 @@ const SORTS: Record<Sort, Cmp> = {
   fim: by(nullsLast((d) => d.bestEnd, 1), (a, b) => b.savingPct - a.savingPct),
   populares: by(nullsLast((d) => d.game.pop, 1), (a, b) => b.savingPct - a.savingPct),
   alta: by(nullsLast((d) => d.game.trend, 1), (a, b) => b.savingPct - a.savingPct),
+  usuarios: by(nullsLast((d) => d.game.mc?.user, -1), nullsLast((d) => d.game.pop, 1)),
+  imprensa: by(nullsLast((d) => d.game.mc?.critic, -1), nullsLast((d) => d.game.pop, 1)),
   novos: by(nullsLast((d) => d.game.release, -1)),
   nome: (a, b) => a.game.name.localeCompare(b.game.name, 'pt-BR'),
 };
+
+function passesScore(d: Deal, f: ScoreFilter): boolean {
+  if (!f) return true;
+  const min = Number(f.slice(1));
+  const score = f[0] === 'u' ? d.game.mc?.user : d.game.mc?.critic;
+  return score != null && score >= min;
+}
 
 export function filterDeals(deals: Deal[], opts: ListOptions): Deal[] {
   const q = normalizeSearch(opts.q);
@@ -139,6 +176,7 @@ export function filterDeals(deals: Deal[], opts: ListOptions): Deal[] {
       (opts.scope === 'qualquer' || (d.brCur != null && d.jpCur != null)) &&
       (!opts.platform || d.game.platform === opts.platform) &&
       (!opts.top || (d.game.pop != null && d.game.pop <= opts.top)) &&
+      passesScore(d, opts.score) &&
       (!q || d.search.includes(q)) &&
       // Oferta = promoção em algum dos dois países E o melhor preço abaixo do preço cheio BR.
       (opts.filter === 'todos' || (d.onSale && d.saving >= 0.01)) &&

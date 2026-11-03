@@ -24,6 +24,7 @@ Não há dependências de runtime: Node 22.18+ roda TypeScript direto e já traz
 | Catálogo do Brasil | [blawar/titledb](https://github.com/blawar/titledb) (`BR.pt.json`) + busca do nintendo.com/pt-br (Algolia, chave pública de busca do site), que cobre lançamentos recentes e Switch 2 |
 | Preços do Brasil | `api.ec.nintendo.com/v1/price` (API pública do eShop, 50 jogos por chamada). Se um lote falhar, vale o preço da busca do nintendo.com |
 | Preços Amazon JP | busca da amazon.co.jp, só a versão digital (`オンラインコード版` / `ダウンロード版`) com título idêntico ao do eShop JP. Só os 70 jogos mais populares, uma vez por dia, uma busca a cada 3 s. Se a Amazon bloquear, para e mantém os últimos preços (`AMAZON_TOP=0` desliga) |
+| Notas (Metacritic) | endpoints JSON que a página do Metacritic usa: imprensa (Metascore) e usuários da versão de Switch / Switch 2. Switch 2 Edition sem nota própria usa a do jogo base. ~250 jogos por execução, dos mais populares; cada nota é renovada a cada 14 dias (3 para lançamentos). `METACRITIC_BUDGET=0` desliga |
 | Popularidade | busca do nintendo.com/pt-br (`popularityRank` e `trendingRank` da loja brasileira), renumerada só entre os jogos do site |
 | Data de lançamento (BR) | titledb `US.en.json`: o nsuid das Américas é o mesmo, e a data do catálogo BR de jogos antigos é a de entrada na eShop brasileira |
 | Câmbio JPY→BRL | AwesomeAPI, com fallback no ExchangeRate-API |

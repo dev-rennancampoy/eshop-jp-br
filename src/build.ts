@@ -36,6 +36,12 @@ type Row = {
   amz_cur: number | null;
   amz_asin: string | null;
   amz_at: string | null;
+  mc_slug: string | null;
+  mc_critic: number | null;
+  mc_critic_reviews: number | null;
+  mc_user: number | null;
+  mc_user_reviews: number | null;
+  mc_from_base: number | null;
 };
 
 const tuple = (reg: number | null, cur: number | null, end: string | null): PriceTuple | undefined =>
@@ -57,6 +63,17 @@ function toRec(r: Row): GameRec {
     // Na Amazon não há "preço cheio" confiável: o terceiro campo guarda quando o preço foi visto.
     amz: tuple(r.amz_cur, r.amz_cur, r.amz_at),
     asin: r.amz_asin ?? undefined,
+    mc:
+      r.mc_slug && (r.mc_critic != null || r.mc_user != null)
+        ? {
+            slug: r.mc_slug,
+            critic: r.mc_critic ?? undefined,
+            criticReviews: r.mc_critic_reviews ?? undefined,
+            user: r.mc_user ?? undefined,
+            userReviews: r.mc_user_reviews ?? undefined,
+            fromBase: r.mc_from_base ? true : undefined,
+          }
+        : undefined,
   };
   // JSON.stringify já descarta undefined; o nome JP só vale quando difere do principal.
   if (rec.nameJp === rec.name) rec.nameJp = undefined;
@@ -89,11 +106,14 @@ async function main(): Promise<void> {
       `select g.*,
               br.regular as br_reg, br.current as br_cur, br.sale_end as br_end,
               jp.regular as jp_reg, jp.current as jp_cur, jp.sale_end as jp_end,
-              amz.current as amz_cur, amz.ref as amz_asin, amz.fetched_at as amz_at
+              amz.current as amz_cur, amz.ref as amz_asin, amz.fetched_at as amz_at,
+              mc.slug as mc_slug, mc.critic as mc_critic, mc.critic_reviews as mc_critic_reviews,
+              mc.user_score as mc_user, mc.user_reviews as mc_user_reviews, mc.from_base as mc_from_base
        from game g
        left join price br on br.game_id = g.id and br.region = 'BR'
        left join price jp on jp.game_id = g.id and jp.region = 'JP'
        left join price amz on amz.game_id = g.id and amz.region = 'AMZ'
+       left join metacritic mc on mc.game_id = g.id
        where br.game_id is not null or jp.game_id is not null`,
     )
     .all() as Row[];

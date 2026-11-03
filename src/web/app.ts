@@ -2,6 +2,7 @@
 //   #/?q=zelda&ordem=preco   home / busca
 //   #/jogo/<id>              página do jogo
 import {
+  SCORE_FILTERS,
   SORTS_LIST,
   TOP_OPTIONS,
   filterDeals,
@@ -75,6 +76,7 @@ function parseHome(qs: URLSearchParams): ListOptions {
     scope: pick(qs.get('pais'), ['ambos', 'qualquer'], base.scope),
     platform: pick(qs.get('plataforma'), ['', 'switch', 'switch2'], ''),
     top: (TOP_OPTIONS as readonly number[]).includes(Number(qs.get('populares'))) ? Number(qs.get('populares')) : 0,
+    score: pick(qs.get('nota'), SCORE_FILTERS, ''),
   };
 }
 

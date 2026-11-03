@@ -21,6 +21,7 @@ export type GameRec = {
   jp?: PriceTuple;
   amz?: PriceTuple; // Amazon JP, só para os jogos mais populares
   asin?: string;
+  mc?: Metacritic;
   pop?: number; // posição entre os jogos do site nos mais populares do eShop BR (1 = topo)
   trend?: number; // idem para "em alta"
 };
@@ -32,6 +33,16 @@ export type DataFile = {
   fx: { rate: number; source: string | null; at: string | null };
   fees: JpFees;
   games: GameRec[];
+};
+
+/** Notas do Metacritic da versão de Switch / Switch 2 */
+export type Metacritic = {
+  slug: string;
+  critic?: number; // Metascore (imprensa), 0–100
+  criticReviews?: number;
+  user?: number; // usuários, 0–10
+  userReviews?: number;
+  fromBase?: boolean; // Switch 2 Edition sem notas próprias: nota do jogo de Switch 1
 };
 
 /** Custos de pagar em iene, em % sobre o câmbio comercial (ver config.ts) */

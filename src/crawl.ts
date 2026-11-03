@@ -7,6 +7,7 @@ import { describeError } from './http.ts';
 import { brPublisherGroup, jpPublisherGroup, nameKey, releaseKeys, sharesLatinWords } from './matching.ts';
 import { AmazonBlocked, searchAmazonDigital } from './sources/amazon-jp.ts';
 import { fetchBrStore } from './sources/br-store.ts';
+import { METACRITIC_DELAY_MS, MetacriticBlocked, fetchMetacritic } from './sources/metacritic.ts';
 import { fetchEcPrices, type EcPrice } from './sources/ec-price.ts';
 import { fetchJpyBrl } from './sources/fx.ts';
 import { fetchJpCatalog, type JpGame } from './sources/jp-search.ts';
@@ -142,7 +143,11 @@ async function main(): Promise<void> {
   log(`  ${tdbJp.size} jogos`);
   log('titledb US (data de lançamento)...');
   const usReleaseDates = new Map<string, string>();
-  for (const g of (await loadTitleDb('US.en.json')).values()) if (g.releaseDate) usReleaseDates.set(g.nsuid, g.releaseDate);
+  const usNames = new Map<string, string>(); // nome em inglês, para achar o jogo no Metacritic
+  for (const g of (await loadTitleDb('US.en.json')).values()) {
+    if (g.releaseDate) usReleaseDates.set(g.nsuid, g.releaseDate);
+    usNames.set(g.nsuid, g.name);
+  }
   log(`  ${usReleaseDates.size} datas`);
 
   log('Catálogo + preços JP (search.nintendo.jp)...');
@@ -339,8 +344,66 @@ async function main(): Promise<void> {
   });
   log(`Gravado. Mudanças de preço: BR ${brChanged}, JP ${jpChanged}.`);
 
+  await crawlMetacritic(db, games, usNames);
   await crawlAmazon(db, games);
   db.close();
+}
+
+const MC_BUDGET = Number(process.env.METACRITIC_BUDGET ?? 250); // jogos por execução; 0 desliga
+const MC_REFRESH_DAYS = 14;
+const MC_REFRESH_NEW_DAYS = 3; // lançamentos dos últimos 60 dias recebem notas novas mais rápido
+
+/**
+ * Notas do Metacritic dos jogos à venda no Brasil, dos mais populares para os menos. Cada execução
+ * busca só um lote (os que nunca foram buscados ou estão vencidos); o resto fica guardado no banco.
+ */
+async function crawlMetacritic(db: DatabaseSync, games: Map<string, GameRow>, usNames: Map<string, string>): Promise<void> {
+  if (MC_BUDGET <= 0) return;
+  const checked = new Map(
+    (db.prepare('select game_id, checked_at from metacritic').all() as { game_id: string; checked_at: string }[]).map((r) => [
+      r.game_id,
+      Date.parse(r.checked_at),
+    ]),
+  );
+  const now = Date.now();
+  const due = (g: GameRow) => {
+    const last = checked.get(g.id);
+    if (last == null) return true;
+    const isNew = g.releaseDate != null && now - Date.parse(g.releaseDate) < 60 * 86_400_000;
+    return now - last > (isNew ? MC_REFRESH_NEW_DAYS : MC_REFRESH_DAYS) * 86_400_000;
+  };
+  const queue = [...games.values()]
+    .filter((g) => g.nsuidBr && g.popularity != null && due(g))
+    .sort((a, b) => (a.popularity as number) - (b.popularity as number))
+    .slice(0, MC_BUDGET);
+  if (!queue.length) return;
+  log(`Metacritic (${queue.length} jogos, dos mais populares)...`);
+
+  const upsert = db.prepare(`
+    insert into metacritic (game_id, slug, critic, critic_reviews, user_score, user_reviews, from_base, checked_at)
+    values (?, ?, ?, ?, ?, ?, ?, ?)
+    on conflict(game_id) do update set slug = excluded.slug, critic = excluded.critic,
+      critic_reviews = excluded.critic_reviews, user_score = excluded.user_score,
+      user_reviews = excluded.user_reviews, from_base = excluded.from_base, checked_at = excluded.checked_at`);
+  let found = 0;
+  for (const [i, g] of queue.entries()) {
+    if (i > 0) await new Promise((r) => setTimeout(r, METACRITIC_DELAY_MS));
+    const name = usNames.get(g.nsuidBr as string) ?? g.name;
+    try {
+      const mc = await fetchMetacritic(name, g.platform === 'switch2' ? 'switch2' : 'switch', g.id.endsWith('-S2'));
+      if (mc && (mc.critic != null || mc.user != null)) found++;
+      upsert.run(
+        g.id, mc?.slug ?? null, mc?.critic ?? null, mc?.criticReviews ?? null, mc?.user ?? null, mc?.userReviews ?? null,
+        mc?.fromBase ? 1 : 0, new Date().toISOString(),
+      );
+    } catch (err) {
+      const blocked = err instanceof MetacriticBlocked;
+      console.warn(`  !! Metacritic ${blocked ? 'recusou, parando' : 'falhou'} em "${name}": ${describeError(err)}`);
+      if (blocked) break;
+    }
+  }
+  const total = (db.prepare('select count(*) as n from metacritic where critic is not null or user_score is not null').get() as { n: number }).n;
+  log(`  ${found} de ${queue.length} com nota. Total no banco: ${total} jogos com nota.`);
 }
 
 const AMAZON_TOP = Number(process.env.AMAZON_TOP ?? 70); // 0 desliga a etapa da Amazon

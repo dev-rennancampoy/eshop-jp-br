@@ -42,7 +42,7 @@ export function gameHref(g: GameRec): string {
   return `#/jogo/${encodeURIComponent(g.id)}`;
 }
 
-export const DEFAULTS: ListOptions = { q: '', sort: 'desconto', filter: 'todos', scope: 'ambos', platform: '', top: 0 };
+export const DEFAULTS: ListOptions = { q: '', sort: 'desconto', filter: 'todos', scope: 'ambos', platform: '', top: 0, score: '' };
 // Buscando um jogo específico, mostra tudo (não só promoções) e de qualquer país.
 export const SEARCH_DEFAULTS: ListOptions = { ...DEFAULTS, filter: 'todos', scope: 'qualquer' };
 
@@ -55,8 +55,37 @@ export function homeHref(opts: ListOptions): string {
   if (opts.scope !== base.scope) qs.set('pais', opts.scope);
   if (opts.platform) qs.set('plataforma', opts.platform);
   if (opts.top) qs.set('populares', String(opts.top));
+  if (opts.score) qs.set('nota', opts.score);
   const s = qs.toString();
   return s ? `#/?${s}` : '#/';
+}
+
+// ---------- notas do Metacritic ----------
+
+// Faixas de cor do próprio Metacritic: verde, amarelo, vermelho
+const criticTone = (v: number) => (v >= 75 ? 'good' : v >= 50 ? 'mixed' : 'bad');
+const userTone = (v: number) => (v >= 7.5 ? 'good' : v >= 5 ? 'mixed' : 'bad');
+const fmtUser = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+function scoresView(g: GameRec): string {
+  const mc = g.mc;
+  if (!mc) return '';
+  const platform = mc.fromBase || g.platform !== 'switch2' ? 'nintendo-switch' : 'nintendo-switch-2';
+  const link = (kind: 'critic' | 'user') => `https://www.metacritic.com/game/${mc.slug}/${kind}-reviews/?platform=${platform}`;
+  const box = (kind: 'critic' | 'user', label: string, value: number | undefined, count: number | undefined, unit: string) => {
+    const shown = value == null ? '—' : kind === 'critic' ? String(value) : fmtUser(value);
+    const tone = value == null ? 'none' : kind === 'critic' ? criticTone(value) : userTone(value);
+    const sub = value == null ? 'sem nota ainda' : count ? `${count.toLocaleString('pt-BR')} ${unit}` : '';
+    return `<a class="score-box" href="${esc(link(kind))}" target="_blank" rel="noopener">
+      <b class="${tone}">${shown}</b><span>${label}<small>${sub}</small></span></a>`;
+  };
+  return `<div class="scores">
+    ${box('critic', 'Imprensa', mc.critic, mc.criticReviews, 'críticas')}
+    ${box('user', 'Usuários', mc.user, mc.userReviews, 'avaliações')}
+  </div>
+  <p class="note">Metacritic, versão de ${platform === 'nintendo-switch-2' ? 'Switch 2' : 'Switch'}${
+    mc.fromBase ? ' (a Switch 2 Edition ainda não tem nota própria)' : ''
+  }.</p>`;
 }
 
 // ---------- home ----------
@@ -66,19 +95,29 @@ export function card(d: Deal): string {
   const badge = d.savingPct >= 0.01 ? `<span class="badge">-${pct.format(d.savingPct)}</span>` : '';
   const from = d.saving >= 0.01 ? `<span class="from">${money(d.refReg)}</span>` : '';
   let note = '';
-  if (d.best === 'JP' && d.brCur != null && d.brCur - d.bestPrice >= 0.01) {
+  if (d.best !== 'BR' && d.brCur != null && d.brCur - d.bestPrice >= 0.01) {
     note = `<span class="note good">${pct.format(1 - d.bestPrice / d.brCur)} mais barato que no 🇧🇷</span>`;
   } else if (d.best === 'BR' && d.jpCur != null) {
     note = '<span class="note">melhor no Brasil</span>';
   }
   const ends = endsIn(d.bestEnd);
+  const rank =
+    g.pop != null
+      ? `<span class="rank${g.pop <= 100 ? ' hot' : ''}" title="Posição nos mais populares do eShop Brasil">${
+          g.pop <= 100 ? '🔥 ' : ''
+        }#${g.pop.toLocaleString('pt-BR')}</span>`
+      : '';
+  const user =
+    g.mc?.user != null
+      ? ` <span class="mcs ${userTone(g.mc.user)}" title="Nota dos usuários no Metacritic${
+          g.mc.userReviews ? ` (${g.mc.userReviews.toLocaleString('pt-BR')} avaliações)` : ''
+        }">👤 ${fmtUser(g.mc.user)}</span>`
+      : '';
   return `<a class="card" href="${esc(gameHref(g))}">
-  <div class="img">${img(g.img, 320, 'loading="lazy"')}${badge}</div>
+  <div class="img">${img(g.img, 320, 'loading="lazy"')}${badge}${rank}</div>
   <div class="body">
     <div class="name">${esc(g.name)}</div>
-    <div><span class="chip">${esc(PLATFORM[g.platform] ?? 'Switch')}</span>${
-      g.pop != null && g.pop <= 100 ? ` <span class="chip hot" title="Entre os mais populares do eShop Brasil">🔥 #${g.pop}</span>` : ''
-    }</div>
+    <div class="chips"><span class="chip">${esc(PLATFORM[g.platform] ?? 'Switch')}</span>${user}</div>
     <div class="price"><span title="${STORE[d.best]}">${FLAG[d.best]}</span> ${money(d.bestPrice)} ${from}</div>
     ${d.best === 'AMZ' ? '<span class="note src">via Amazon JP (código digital)</span>' : ''}
     ${note}
@@ -126,12 +165,23 @@ export function homeView(p: {
       ['fim', 'Terminando antes'],
       ['populares', 'Mais populares'],
       ['alta', 'Em alta'],
+      ['usuarios', 'Nota dos usuários'],
+      ['imprensa', 'Nota da imprensa'],
       ['novos', 'Lançamentos'],
       ['nome', 'Nome'],
     ])}
     ${select('filtro', opts.filter, 'Filtro', [
       ['todos', 'Todos os jogos'],
       ['ofertas', 'Só em promoção'],
+    ])}
+    ${select('nota', opts.score, 'Nota no Metacritic', [
+      ['', 'Qualquer nota'],
+      ['u7', 'Usuários 7+'],
+      ['u8', 'Usuários 8+'],
+      ['u9', 'Usuários 9+'],
+      ['c75', 'Imprensa 75+'],
+      ['c85', 'Imprensa 85+'],
+      ['c90', 'Imprensa 90+'],
     ])}
     ${select('populares', String(opts.top), 'Popularidade', [
       ['0', 'Qualquer popularidade'],
@@ -267,6 +317,7 @@ export function gameView(p: {
       <h1>${esc(g.name)}</h1>
       ${g.nameJp && g.nameJp !== g.name ? `<p class="sub" lang="ja">${esc(g.nameJp)}</p>` : ''}
       <p class="sub">${info}</p>
+      ${scoresView(g)}
       ${verdict}
     </div>
   </section>

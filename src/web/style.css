@@ -51,7 +51,6 @@ h1 { font-size: 22px; margin: 20px 0 4px; letter-spacing: -.01em; line-height: 1
 .badge { position: absolute; top: 8px; left: 8px; background: var(--accent); color: var(--accent-text);
   font-weight: 800; font-size: 13px; padding: 3px 8px; border-radius: 8px; }
 .chip { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
-.chip.hot { color: var(--accent); border-color: currentColor; font-weight: 600; }
 .card .body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
 .card .name { font-weight: 600; font-size: 14px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2;
   -webkit-box-orient: vertical; overflow: hidden; }
@@ -120,3 +119,23 @@ footer.wrap { color: var(--muted); font-size: 12px; padding: 20px 16px calc(40px
   scroll-padding-left: 16px; -webkit-overflow-scrolling: touch; }
 .featured .row .card { scroll-snap-align: start; }
 @media (max-width: 640px) { .featured .row { grid-auto-columns: 150px; } }
+
+/* Posição na popularidade, sobre a foto */
+.rank { position: absolute; top: 8px; right: 8px; background: rgb(0 0 0 / .72); color: #fff; font-weight: 700;
+  font-size: 12px; padding: 3px 7px; border-radius: 8px; backdrop-filter: blur(2px); }
+.rank.hot { background: var(--accent); }
+.chips { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+
+/* Notas do Metacritic: verde / amarelo / vermelho, como no site deles */
+.mcs { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 6px; color: #111; }
+.mcs.good, .score-box b.good { background: #00ce7a; }
+.mcs.mixed, .score-box b.mixed { background: #ffbd3f; }
+.mcs.bad, .score-box b.bad { background: #ff6874; }
+.scores { display: flex; gap: 10px; margin: 12px 0 4px; flex-wrap: wrap; }
+.score-box { display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 6px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--border); }
+.score-box b { min-width: 40px; height: 40px; display: grid; place-items: center; border-radius: 8px; font-size: 18px;
+  color: #111; }
+.score-box b.none { background: var(--surface-2); color: var(--muted); }
+.score-box span { display: flex; flex-direction: column; font-size: 13px; font-weight: 600; line-height: 1.2; }
+.score-box small { color: var(--muted); font-weight: 400; font-size: 11px; }
