@@ -59,6 +59,7 @@ h1 { font-size: 22px; margin: 20px 0 4px; letter-spacing: -.01em; line-height: 1
 .from { color: var(--muted); font-size: 12px; font-weight: 400; text-decoration: line-through; }
 .note { font-size: 12px; color: var(--muted); font-weight: 400; }
 .note.good { color: var(--good); font-weight: 600; }
+.note.src { font-weight: 600; }
 
 .more { display: flex; justify-content: center; margin: 4px 0 32px; }
 .more button { padding: 12px 20px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface);
@@ -72,7 +73,8 @@ h1 { font-size: 22px; margin: 20px 0 4px; letter-spacing: -.01em; line-height: 1
 .hero h1 { margin-top: 0; }
 .verdict { padding: 12px 14px; border-radius: 12px; background: var(--good-bg); color: var(--good); font-weight: 700; margin: 12px 0 0; }
 .verdict.neutral { background: var(--surface-2); color: var(--text); }
-.regions { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.regions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 960px) { .regions { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .region { background: var(--surface); border: 2px solid var(--border); border-radius: 14px; padding: 16px; }
 .region.best { border-color: var(--good); }
 .region h2 { margin: 0 0 8px; font-size: 16px; display: flex; justify-content: space-between; align-items: center; }

@@ -27,8 +27,8 @@ function endsIn(iso: string | null): string {
   return `termina em ${days} dias`;
 }
 
-const FLAG: Record<Region, string> = { BR: '🇧🇷', JP: '🇯🇵' };
-const COUNTRY: Record<Region, string> = { BR: 'Brasil', JP: 'Japão' };
+const FLAG: Record<Region, string> = { BR: '🇧🇷', JP: '🇯🇵', AMZ: '🇯🇵' };
+const STORE: Record<Region, string> = { BR: 'eShop Brasil', JP: 'eShop Japão', AMZ: 'Amazon Japão' };
 const PLATFORM: Record<string, string> = { switch: 'Switch', switch2: 'Switch 2' };
 
 /** Miniatura via wsrv.nl: as imagens originais do eShop têm ~1 MB cada. */
@@ -79,7 +79,8 @@ export function card(d: Deal): string {
     <div><span class="chip">${esc(PLATFORM[g.platform] ?? 'Switch')}</span>${
       g.pop != null && g.pop <= 100 ? ` <span class="chip hot" title="Entre os mais populares do eShop Brasil">🔥 #${g.pop}</span>` : ''
     }</div>
-    <div class="price"><span title="${COUNTRY[d.best]}">${FLAG[d.best]}</span> ${money(d.bestPrice)} ${from}</div>
+    <div class="price"><span title="${STORE[d.best]}">${FLAG[d.best]}</span> ${money(d.bestPrice)} ${from}</div>
+    ${d.best === 'AMZ' ? '<span class="note src">via Amazon JP (código digital)</span>' : ''}
     ${note}
     ${ends ? `<span class="note">⏱ ${ends}</span>` : ''}
   </div>
@@ -161,27 +162,29 @@ export function homeView(p: {
 
 // ---------- página do jogo ----------
 
-function storeUrl(region: Region, nsuid: string): string {
-  return region === 'JP'
-    ? `https://store-jp.nintendo.com/item/software/D${nsuid}`
-    : `https://ec.nintendo.com/apps/${nsuid}/BR`;
+function storeUrl(region: Region, g: GameRec): string | null {
+  if (region === 'AMZ') return g.asin ? `https://www.amazon.co.jp/dp/${g.asin}` : null;
+  if (region === 'JP') return g.nsuidJp ? `https://store-jp.nintendo.com/item/software/D${g.nsuidJp}` : null;
+  return g.nsuidBr ? `https://ec.nintendo.com/apps/${g.nsuidBr}/BR` : null;
 }
 
 function regionBox(region: Region, g: GameRec, cost: JpCost, isBest: boolean, hasBr: boolean): string {
-  const tuple = region === 'BR' ? g.br : g.jp;
-  const nsuid = region === 'BR' ? g.nsuidBr : g.nsuidJp;
-  const head = `<h2><span>${FLAG[region]} ${COUNTRY[region]}</span>${isBest ? '<span class="tag">Melhor preço</span>' : ''}</h2>`;
+  const tuple = region === 'BR' ? g.br : region === 'JP' ? g.jp : g.amz;
+  const head = `<h2><span>${FLAG[region]} ${STORE[region]}</span>${isBest ? '<span class="tag">Melhor preço</span>' : ''}</h2>`;
   if (!tuple) {
     const why =
-      region === 'BR' && !hasBr
-        ? 'Preço do Brasil ainda não coletado.'
-        : `Não está à venda no eShop ${region === 'BR' ? 'brasileiro' : 'japonês'}.`;
+      region === 'AMZ'
+        ? 'Sem versão digital (código) encontrada. A busca na Amazon JP cobre só os 70 jogos mais populares.'
+        : region === 'BR' && !hasBr
+          ? 'Preço do Brasil ainda não coletado.'
+          : `Não está à venda no eShop ${region === 'BR' ? 'brasileiro' : 'japonês'}.`;
     return `<div class="region">${head}<div class="na">${why}</div></div>`;
   }
   const [regular, current, saleEnd] = tuple;
-  const toBrl = (v: number) => (region === 'JP' ? v * cost.factor : v);
+  const inYen = region !== 'BR';
+  const toBrl = (v: number) => (inYen ? v * cost.factor : v);
   const rows: string[] = [];
-  if (region === 'JP') {
+  if (inYen) {
     // A conta aberta: câmbio comercial, depois o spread de quem converte, depois o IOF sobre o total.
     const commercial = current * cost.rate;
     const spread = commercial * (cost.spreadPct / 100);
@@ -194,17 +197,24 @@ function regionBox(region: Region, g: GameRec, cost: JpCost, isBest: boolean, ha
       `<dt>IOF ${pctFmt(cost.iofPct)}</dt><dd>+ ${money(iof)}</dd>`,
     );
   }
-  rows.push(
-    `<dt>Preço cheio</dt><dd>${money(toBrl(regular))}${region === 'JP' ? ` <span class="note">(${yen(regular)})</span>` : ''}</dd>`,
-  );
-  if (current < regular) {
-    rows.push(`<dt>Desconto</dt><dd>-${pct.format(1 - current / regular)}</dd>`);
-    if (saleEnd) rows.push(`<dt>Promoção até</dt><dd>${fmtDateTime(saleEnd)}</dd>`);
+  if (region === 'AMZ') {
+    // Na Amazon o terceiro campo é quando o preço foi visto (coleta 1x por dia)
+    rows.push(`<dt>Versão</dt><dd>Código digital (オンラインコード版)</dd>`);
+    if (saleEnd) rows.push(`<dt>Preço visto em</dt><dd>${fmtDateTime(saleEnd)}</dd>`);
+  } else {
+    rows.push(
+      `<dt>Preço cheio</dt><dd>${money(toBrl(regular))}${inYen ? ` <span class="note">(${yen(regular)})</span>` : ''}</dd>`,
+    );
+    if (current < regular) {
+      rows.push(`<dt>Desconto</dt><dd>-${pct.format(1 - current / regular)}</dd>`);
+      if (saleEnd) rows.push(`<dt>Promoção até</dt><dd>${fmtDateTime(saleEnd)}</dd>`);
+    }
   }
+  const url = storeUrl(region, g);
   return `<div class="region${isBest ? ' best' : ''}">${head}
     <div class="big">${money(toBrl(current))}</div>
     <dl>${rows.join('')}</dl>
-    ${nsuid ? `<a class="btn" href="${esc(storeUrl(region, nsuid))}" target="_blank" rel="noopener">Abrir no eShop ${region} ↗</a>` : ''}
+    ${url ? `<a class="btn" href="${esc(url)}" target="_blank" rel="noopener">Abrir na ${STORE[region]} ↗</a>` : ''}
   </div>`;
 }
 
@@ -225,7 +235,7 @@ export function gameView(p: {
   } else if (d.brCur != null && d.jpCur != null) {
     const diff = d.brCur - d.jpCur;
     if (diff >= 0.01) {
-      verdict = `<div class="verdict">🇯🇵 Mais barato no Japão: ${money(d.jpCur)}, ${money(diff)} (${pct.format(diff / d.brCur)}) a menos que no Brasil hoje.</div>`;
+      verdict = `<div class="verdict">🇯🇵 Mais barato no Japão${d.jpSource === 'AMZ' ? ', na Amazon' : ''}: ${money(d.jpCur)}, ${money(diff)} (${pct.format(diff / d.brCur)}) a menos que no Brasil hoje.</div>`;
     } else if (diff <= -0.01) {
       verdict = `<div class="verdict">🇧🇷 Mais barato no Brasil: ${money(d.brCur)}, ${money(-diff)} (${pct.format(-diff / d.jpCur)}) a menos que no Japão hoje.</div>`;
     } else {
@@ -263,6 +273,7 @@ export function gameView(p: {
   <section class="regions">
     ${regionBox('BR', g, cost, d.best === 'BR', p.hasBr)}
     ${regionBox('JP', g, cost, d.best === 'JP', p.hasBr)}
+    ${regionBox('AMZ', g, cost, d.best === 'AMZ', p.hasBr)}
   </section>
   ${fxNote}
   <div id="history"></div>`;
@@ -270,20 +281,20 @@ export function gameView(p: {
 
 export function historyView(entries: HistoryEntry[], factor: number): string {
   if (!entries.length) return '';
-  const lowest = (['BR', 'JP'] as const)
+  const lowest = (['BR', 'JP', 'AMZ'] as const)
     .map((r) => {
       const rows = entries.filter((h) => h[0] === r);
       if (!rows.length) return '';
       const min = rows.reduce((a, b) => (b[2] < a[2] ? b : a));
-      const val = r === 'JP' ? `${yen(min[2])} <span class="note">(≈ ${money(min[2] * factor)} hoje)</span>` : money(min[2]);
-      return `<tr><td>${FLAG[r]} ${COUNTRY[r]}</td><td class="num">${val}</td><td class="num">${fmtDate(min[3])}</td></tr>`;
+      const val = r !== 'BR' ? `${yen(min[2])} <span class="note">(≈ ${money(min[2] * factor)} hoje)</span>` : money(min[2]);
+      return `<tr><td>${FLAG[r]} ${STORE[r]}</td><td class="num">${val}</td><td class="num">${fmtDate(min[3])}</td></tr>`;
     })
     .join('');
   const changes = entries
     .slice(0, 30)
     .map(
       ([r, regular, current, at]) =>
-        `<tr><td>${fmtDate(at)}</td><td>${FLAG[r]}</td><td class="num">${r === 'JP' ? yen(current) : money(current)}</td><td class="num">${
+        `<tr><td>${fmtDate(at)}</td><td>${FLAG[r]}${r === 'AMZ' ? ' Amazon' : ''}</td><td class="num">${r !== 'BR' ? yen(current) : money(current)}</td><td class="num">${
           current < regular ? `-${pct.format(1 - current / regular)}` : '—'
         }</td></tr>`,
     )

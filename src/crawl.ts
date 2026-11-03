@@ -1,10 +1,11 @@
 // Coleta catálogo + preços do eShop JP e BR e grava no SQLite.
 //   npm run crawl
 import type { DatabaseSync } from 'node:sqlite';
-import { openDb, setMeta, transaction, type Region } from './db.ts';
+import { getMeta, openDb, setMeta, transaction, type Region } from './db.ts';
 import { ALIASES, NOT_SAME } from './aliases.ts';
 import { describeError } from './http.ts';
 import { brPublisherGroup, jpPublisherGroup, nameKey, releaseKeys, sharesLatinWords } from './matching.ts';
+import { AmazonBlocked, searchAmazonDigital } from './sources/amazon-jp.ts';
 import { fetchBrStore } from './sources/br-store.ts';
 import { fetchEcPrices, type EcPrice } from './sources/ec-price.ts';
 import { fetchJpyBrl } from './sources/fx.ts';
@@ -34,6 +35,7 @@ type PriceRow = {
   saleStart: string | null;
   saleEnd: string | null;
   status: string;
+  ref?: string | null; // ASIN na Amazon
 };
 
 /** Title IDs de Switch 2 começam com 04; os de Switch 1, com 01. */
@@ -94,12 +96,12 @@ function saveGames(db: DatabaseSync, games: Iterable<GameRow>, now: string): voi
 function savePrices(db: DatabaseSync, region: Region, prices: PriceRow[], now: string, removeMissing: boolean): number {
   const prev = db.prepare('select regular, current from price where game_id = ? and region = ?');
   const upsert = db.prepare(`
-    insert into price (game_id, region, currency, regular, current, sale_start, sale_end, status, fetched_at)
-    values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    insert into price (game_id, region, currency, regular, current, sale_start, sale_end, status, ref, fetched_at)
+    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     on conflict(game_id, region) do update set
       currency = excluded.currency, regular = excluded.regular, current = excluded.current,
       sale_start = excluded.sale_start, sale_end = excluded.sale_end, status = excluded.status,
-      fetched_at = excluded.fetched_at`);
+      ref = excluded.ref, fetched_at = excluded.fetched_at`);
   const history = db.prepare('insert into price_history (game_id, region, regular, current, seen_at) values (?, ?, ?, ?, ?)');
 
   let changed = 0;
@@ -109,7 +111,7 @@ function savePrices(db: DatabaseSync, region: Region, prices: PriceRow[], now: s
       history.run(p.gameId, region, p.regular, p.current, now);
       changed++;
     }
-    upsert.run(p.gameId, region, p.currency, p.regular, p.current, p.saleStart, p.saleEnd, p.status, now);
+    upsert.run(p.gameId, region, p.currency, p.regular, p.current, p.saleStart, p.saleEnd, p.status, p.ref ?? null, now);
   }
   if (removeMissing) db.prepare('delete from price where region = ? and fetched_at < ?').run(region, now);
   return changed;
@@ -324,7 +326,64 @@ async function main(): Promise<void> {
     return { brChanged, jpChanged };
   });
   log(`Gravado. Mudanças de preço: BR ${brChanged}, JP ${jpChanged}.`);
+
+  await crawlAmazon(db, games);
   db.close();
+}
+
+const AMAZON_TOP = Number(process.env.AMAZON_TOP ?? 70); // 0 desliga a etapa da Amazon
+const AMAZON_EVERY_HOURS = 20; // uma vez por dia (o workflow roda a cada 6 h)
+const AMAZON_DELAY_MS = 3000;
+
+/** Versão digital na Amazon JP dos jogos mais populares que existem no eShop JP. */
+async function crawlAmazon(db: DatabaseSync, games: Map<string, GameRow>): Promise<void> {
+  if (AMAZON_TOP <= 0) return;
+  const last = Date.parse(getMeta(db, 'amazon_crawled_at') ?? '');
+  if (!process.env.AMAZON_FORCE && Date.now() - last < AMAZON_EVERY_HOURS * 3_600_000) {
+    log('Amazon JP: coletada há menos de 20 h, pulando.');
+    return;
+  }
+  const top = [...games.values()]
+    .filter((g) => g.nameJp && g.nsuidJp && g.popularity != null)
+    .sort((a, b) => (a.popularity as number) - (b.popularity as number))
+    .slice(0, AMAZON_TOP);
+  log(`Amazon JP (versão digital dos ${top.length} jogos mais populares)...`);
+
+  const now = new Date().toISOString();
+  const prices: PriceRow[] = [];
+  let complete = true;
+  for (const [i, g] of top.entries()) {
+    if (i > 0) await new Promise((r) => setTimeout(r, AMAZON_DELAY_MS));
+    try {
+      const offer = await searchAmazonDigital(g.nameJp as string);
+      if (offer) {
+        prices.push({
+          gameId: g.id,
+          region: 'AMZ',
+          currency: 'JPY',
+          regular: offer.price,
+          current: offer.price,
+          saleStart: null,
+          saleEnd: null,
+          status: 'onsale',
+          ref: offer.asin,
+        });
+      }
+    } catch (err) {
+      // Bloqueio: para tudo e mantém os preços anteriores. Sem insistir nem tentar contornar.
+      complete = false;
+      const blocked = err instanceof AmazonBlocked;
+      console.warn(`  !! Amazon JP ${blocked ? 'bloqueou, parando' : 'falhou'} no jogo ${i + 1}/${top.length}: ${describeError(err)}`);
+      if (blocked) break;
+    }
+  }
+
+  const changed = transaction(db, () => {
+    const n = savePrices(db, 'AMZ', prices, now, complete);
+    if (complete) setMeta(db, 'amazon_crawled_at', now);
+    return n;
+  });
+  log(`  ${prices.length} de ${top.length} com versão digital na Amazon. Mudanças de preço: ${changed}.`);
 }
 
 main().catch((err) => {

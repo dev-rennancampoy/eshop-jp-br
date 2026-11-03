@@ -1,6 +1,7 @@
 // Formato dos arquivos gerados pelo build (data.json e h/*.json) e lidos pelo site.
 
-export type Region = 'BR' | 'JP';
+/** BR e JP = eShop; AMZ = Amazon JP (versão digital, também em iene) */
+export type Region = 'BR' | 'JP' | 'AMZ';
 export type Platform = 'switch' | 'switch2';
 
 /** [preço cheio, preço atual, fim da promoção (ISO) ou null], na moeda local: BRL ou JPY */
@@ -18,6 +19,8 @@ export type GameRec = {
   nsuidJp?: string;
   br?: PriceTuple;
   jp?: PriceTuple;
+  amz?: PriceTuple; // Amazon JP, só para os jogos mais populares
+  asin?: string;
   pop?: number; // posição entre os jogos do site nos mais populares do eShop BR (1 = topo)
   trend?: number; // idem para "em alta"
 };

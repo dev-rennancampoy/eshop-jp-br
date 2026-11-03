@@ -23,6 +23,7 @@ Não há dependências de runtime: Node 22.18+ roda TypeScript direto e já traz
 | Catálogo e preços do Japão | `search.nintendo.jp` (busca oficial, já traz preço cheio, preço atual, promoção, editora e lançamento) |
 | Catálogo do Brasil | [blawar/titledb](https://github.com/blawar/titledb) (`BR.pt.json`) + busca do nintendo.com/pt-br (Algolia, chave pública de busca do site), que cobre lançamentos recentes e Switch 2 |
 | Preços do Brasil | `api.ec.nintendo.com/v1/price` (API pública do eShop, 50 jogos por chamada). Se um lote falhar, vale o preço da busca do nintendo.com |
+| Preços Amazon JP | busca da amazon.co.jp, só a versão digital (`オンラインコード版` / `ダウンロード版`) com título idêntico ao do eShop JP. Só os 70 jogos mais populares, uma vez por dia, uma busca a cada 3 s. Se a Amazon bloquear, para e mantém os últimos preços (`AMAZON_TOP=0` desliga) |
 | Popularidade | busca do nintendo.com/pt-br (`popularityRank` e `trendingRank` da loja brasileira), renumerada só entre os jogos do site |
 | Data de lançamento (BR) | titledb `US.en.json`: o nsuid das Américas é o mesmo, e a data do catálogo BR de jogos antigos é a de entrada na eShop brasileira |
 | Câmbio JPY→BRL | AwesomeAPI, com fallback no ExchangeRate-API |
@@ -47,6 +48,7 @@ Se aparecer um par errado no site, adicione-o em `NOT_SAME` (`src/aliases.ts`). 
   - Spread: **4%** no cartão de crédito comum ou **0,7%** para quem marca **"Cliente Wise"** no topo do site
     (fica salvo no navegador).
   - Os percentuais ficam em `src/config.ts` e podem ser trocados no build por `JP_IOF`, `JP_SPREAD_CARTAO` e `JP_SPREAD_WISE`.
+- O lado japonês vale o menor entre eShop JP e Amazon JP (os dois em iene, mesmo spread e IOF). Na página do jogo aparecem as três origens.
 - Em caso de empate, ganha o Brasil.
 - O desconto e a economia são medidos contra o **preço cheio no Brasil**.
 - "Só em promoção" = há promoção em algum dos dois países **e** o melhor preço fica abaixo do preço cheio no Brasil.

@@ -23,8 +23,9 @@ export type Deal = {
   search: string;
   brCur: number | null;
   brReg: number | null;
-  jpCur: number | null; // em BRL
-  jpReg: number | null; // em BRL
+  jpCur: number | null; // em BRL: o mais barato entre eShop JP e Amazon JP
+  jpReg: number | null; // em BRL: preço cheio no eShop JP
+  jpSource: 'JP' | 'AMZ'; // de onde veio o jpCur
   best: Region;
   bestPrice: number;
   bestEnd: string | null;
@@ -38,9 +39,9 @@ export type Deal = {
 /** Minúsculas, sem acento e sem ™/®, para "pokemon" achar "Pokémon™". */
 export function normalizeSearch(s: string): string {
   return s
+    .replace(/[™®©]/g, '') // antes do NFKD, que transforma ™ em "TM"
     .normalize('NFKD')
     .replace(/[̀-ͯ]/g, '')
-    .replace(/[™®©]/g, '')
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .trim();
@@ -60,14 +61,20 @@ export function jpCost(rate: number, fees: JpFees, wise: boolean): JpCost {
 export function toDeal(game: GameRec, factor: number, search: string): Deal {
   const brCur = game.br ? game.br[1] : null;
   const brReg = game.br ? game.br[0] : null;
-  const jpCur = game.jp ? game.jp[1] * factor : null;
-  const jpReg = game.jp ? game.jp[0] * factor : null;
-  const best: Region = brCur == null ? 'JP' : jpCur == null || brCur <= jpCur ? 'BR' : 'JP';
-  const bestPrice = (best === 'JP' ? jpCur : brCur) as number;
+  // Lado japonês: o mais barato entre eShop e Amazon (os dois em iene, mesmo custo de conversão)
+  const eshopJp = game.jp ? game.jp[1] * factor : null;
+  const amazonJp = game.amz ? game.amz[1] * factor : null;
+  const jpSource = amazonJp != null && (eshopJp == null || amazonJp < eshopJp) ? 'AMZ' : 'JP';
+  const jpCur = jpSource === 'AMZ' ? amazonJp : eshopJp;
+  const jpReg = game.jp ? game.jp[0] * factor : amazonJp;
+  const best: Region = brCur == null ? jpSource : jpCur == null || brCur <= jpCur ? 'BR' : jpSource;
+  const bestPrice = (best === 'BR' ? brCur : jpCur) as number;
   const refReg = (brReg ?? jpReg) as number;
   const saving = refReg - bestPrice;
   const savingPct = refReg > 0 ? 1 - bestPrice / refReg : 0;
-  const onSale = (brCur != null && brCur < (brReg as number)) || (jpCur != null && jpCur < (jpReg as number));
+  // Promoção é só a do eShop: a Amazon vende o código digital mais barato quase sempre.
+  const onSale =
+    (brCur != null && brCur < (brReg as number)) || (eshopJp != null && game.jp != null && game.jp[1] < game.jp[0]);
   return {
     game,
     search,
@@ -75,9 +82,10 @@ export function toDeal(game: GameRec, factor: number, search: string): Deal {
     brReg,
     jpCur,
     jpReg,
+    jpSource,
     best,
     bestPrice,
-    bestEnd: (best === 'JP' ? game.jp?.[2] : game.br?.[2]) ?? null,
+    bestEnd: (best === 'BR' ? game.br?.[2] : best === 'JP' ? game.jp?.[2] : null) ?? null,
     refReg,
     saving,
     savingPct,

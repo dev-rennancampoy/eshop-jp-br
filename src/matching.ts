@@ -3,9 +3,9 @@
 
 function compact(s: string): string {
   return s
+    .replace(/[™®©]/g, '') // antes do NFKC, que transforma ™ em "TM"
     .normalize('NFKC')
     .toLowerCase()
-    .replace(/[™®©]/g, '')
     .replace(/[^\p{L}\p{N}]+/gu, '');
 }
 
@@ -66,9 +66,9 @@ const GENERIC_WORDS = new Set(
  * brasileiro. Nome só em japonês (ou só com termos genéricos como "Edition") passa direto.
  */
 export function sharesLatinWords(jpName: string, brName: string): boolean {
-  const words = (jpName.normalize('NFKC').toLowerCase().match(/[a-z]{3,}/g) ?? []).filter((w) => !GENERIC_WORDS.has(w));
+  const words = (jpName.replace(/[™®©]/g, '').normalize('NFKC').toLowerCase().match(/[a-z]{3,}/g) ?? []).filter((w) => !GENERIC_WORDS.has(w));
   if (!words.length) return true;
-  const br = brName.normalize('NFKC').toLowerCase().replace(/[^a-z]/g, '');
+  const br = brName.replace(/[™®©]/g, '').normalize('NFKC').toLowerCase().replace(/[^a-z]/g, '');
   return words.some((w) => br.includes(w));
 }
 

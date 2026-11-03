@@ -33,6 +33,9 @@ type Row = {
   jp_reg: number | null;
   jp_cur: number | null;
   jp_end: string | null;
+  amz_cur: number | null;
+  amz_asin: string | null;
+  amz_at: string | null;
 };
 
 const tuple = (reg: number | null, cur: number | null, end: string | null): PriceTuple | undefined =>
@@ -51,6 +54,9 @@ function toRec(r: Row): GameRec {
     nsuidJp: r.nsuid_jp ?? undefined,
     br: tuple(r.br_reg, r.br_cur, r.br_end),
     jp: tuple(r.jp_reg, r.jp_cur, r.jp_end),
+    // Na Amazon não há "preço cheio" confiável: o terceiro campo guarda quando o preço foi visto.
+    amz: tuple(r.amz_cur, r.amz_cur, r.amz_at),
+    asin: r.amz_asin ?? undefined,
   };
   // JSON.stringify já descarta undefined; o nome JP só vale quando difere do principal.
   if (rec.nameJp === rec.name) rec.nameJp = undefined;
@@ -82,10 +88,12 @@ async function main(): Promise<void> {
     .prepare(
       `select g.*,
               br.regular as br_reg, br.current as br_cur, br.sale_end as br_end,
-              jp.regular as jp_reg, jp.current as jp_cur, jp.sale_end as jp_end
+              jp.regular as jp_reg, jp.current as jp_cur, jp.sale_end as jp_end,
+              amz.current as amz_cur, amz.ref as amz_asin, amz.fetched_at as amz_at
        from game g
        left join price br on br.game_id = g.id and br.region = 'BR'
        left join price jp on jp.game_id = g.id and jp.region = 'JP'
+       left join price amz on amz.game_id = g.id and amz.region = 'AMZ'
        where br.game_id is not null or jp.game_id is not null`,
     )
     .all() as Row[];

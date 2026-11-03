@@ -3,7 +3,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { config } from './config.ts';
 
-export type Region = 'BR' | 'JP';
+export type Region = 'BR' | 'JP' | 'AMZ';
 
 const SCHEMA = `
 create table if not exists game (
@@ -23,8 +23,9 @@ create table if not exists game (
 
 create table if not exists price (
   game_id    text not null references game(id),
-  region     text not null,       -- BR | JP
+  region     text not null,       -- BR | JP (eShop) | AMZ (Amazon JP, versão digital)
   currency   text not null,       -- BRL | JPY (valor na moeda local, sem conversão)
+  ref        text,                -- ASIN na Amazon
   regular    real not null,
   current    real not null,
   sale_start text,
@@ -56,10 +57,13 @@ export function openDb(): DatabaseSync {
   db.exec('pragma journal_mode = wal; pragma busy_timeout = 5000; pragma foreign_keys = on;');
   db.exec(SCHEMA);
   // Bancos criados antes dessas colunas (o do cache do Actions, por exemplo)
-  const cols = new Set((db.prepare('pragma table_info(game)').all() as { name: string }[]).map((c) => c.name));
+  const columns = (table: string) =>
+    new Set((db.prepare(`pragma table_info(${table})`).all() as { name: string }[]).map((c) => c.name));
+  const gameCols = columns('game');
   for (const col of ['popularity', 'trending']) {
-    if (!cols.has(col)) db.exec(`alter table game add column ${col} integer`);
+    if (!gameCols.has(col)) db.exec(`alter table game add column ${col} integer`);
   }
+  if (!columns('price').has('ref')) db.exec('alter table price add column ref text');
   return db;
 }
 
