@@ -21,6 +21,8 @@ type GameRow = {
   image: string | null;
   nsuidBr: string | null;
   nsuidJp: string | null;
+  popularity: number | null;
+  trending: number | null;
 };
 
 type PriceRow = {
@@ -36,6 +38,21 @@ type PriceRow = {
 
 /** Title IDs de Switch 2 começam com 04; os de Switch 1, com 01. */
 const platformOf = (titleId: string) => (titleId.startsWith('04') ? 'switch2' : 'switch');
+
+/**
+ * Vários produtos podem ter o mesmo Title ID: o jogo base, o "Friend's Pass" gratuito, a
+ * "Nintendo Switch 2 Edition". Ordem de preferência (o primeiro fica com a vaga): plataforma do
+ * Title ID, depois pago antes de gratuito, depois o menor preço cheio.
+ */
+function baseFirst(titleId: string | null | undefined, platform: string, regular: number | null | undefined): number[] {
+  return [
+    titleId && platformOf(titleId) === platform ? 0 : 1,
+    regular != null && regular > 0 ? 0 : 1,
+    regular ?? Number.MAX_SAFE_INTEGER,
+  ];
+}
+
+const compareTuples = (a: number[], b: number[]) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 
 /**
  * Casa cada jogo JP com no máximo um BR pela chave, só quando o par é único dos dois lados.
@@ -59,14 +76,17 @@ const log = (msg: string) => console.log(`[${((Date.now() - t0) / 1000).toFixed(
 
 function saveGames(db: DatabaseSync, games: Iterable<GameRow>, now: string): void {
   const stmt = db.prepare(`
-    insert into game (id, name, name_jp, publisher, platform, release_date, image, nsuid_br, nsuid_jp, updated_at)
-    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    insert into game (id, name, name_jp, publisher, platform, release_date, image, nsuid_br, nsuid_jp, popularity, trending, updated_at)
+    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     on conflict(id) do update set
       name = excluded.name, name_jp = excluded.name_jp, publisher = excluded.publisher,
       platform = excluded.platform, release_date = excluded.release_date, image = excluded.image,
-      nsuid_br = excluded.nsuid_br, nsuid_jp = excluded.nsuid_jp, updated_at = excluded.updated_at`);
+      nsuid_br = excluded.nsuid_br, nsuid_jp = excluded.nsuid_jp, popularity = excluded.popularity,
+      trending = excluded.trending, updated_at = excluded.updated_at`);
   for (const g of games) {
-    stmt.run(g.id, g.name, g.nameJp, g.publisher, g.platform, g.releaseDate, g.image, g.nsuidBr, g.nsuidJp, now);
+    stmt.run(
+      g.id, g.name, g.nameJp, g.publisher, g.platform, g.releaseDate, g.image, g.nsuidBr, g.nsuidJp, g.popularity, g.trending, now,
+    );
   }
 }
 
@@ -151,25 +171,33 @@ async function main(): Promise<void> {
   const brPrices: PriceRow[] = [];
   const jpPrices: PriceRow[] = [];
 
+  const brPlatform = (nsuid: string) => {
+    const titleId = tdbBr.get(nsuid)?.titleId;
+    return storeByNsuid.get(nsuid)?.platform ?? (titleId ? platformOf(titleId) : 'switch');
+  };
+  const brOrder = (nsuid: string) =>
+    baseFirst(tdbBr.get(nsuid)?.titleId, brPlatform(nsuid), brPriceByNsuid.get(nsuid)?.regular);
   const brIdByNsuid = new Map<string, string>();
-  for (const nsuid of brNsuids) {
+  for (const nsuid of [...brNsuids].sort((a, b) => compareTuples(brOrder(a), brOrder(b)))) {
     const t = tdbBr.get(nsuid);
     const s = storeByNsuid.get(nsuid);
     const id = t?.titleId ?? `br-${nsuid}`;
-    if (games.has(id)) continue; // mesma Title ID em dois nsuids (raro): fica o primeiro
+    if (games.has(id)) continue; // outro produto com o mesmo Title ID já ficou com a vaga (ver baseFirst)
     brIdByNsuid.set(nsuid, id);
     games.set(id, {
       id,
       name: (s?.name ?? t?.name) as string,
       nameJp: null,
       publisher: s?.publisher ?? t?.publisher ?? null,
-      platform: s?.platform ?? (t?.titleId ? platformOf(t.titleId) : 'switch'),
+      platform: brPlatform(nsuid),
       // No catálogo BR (titledb e nintendo.com/pt-br) a data de jogos antigos é a de entrada na
       // eShop brasileira, aberta no fim de 2020. A dos EUA (mesmo nsuid) é a de lançamento.
       releaseDate: usReleaseDates.get(nsuid) ?? s?.releaseDate ?? t?.releaseDate ?? null,
       image: t?.image ?? s?.image ?? null,
       nsuidBr: nsuid,
       nsuidJp: null,
+      popularity: s?.popularity ?? null,
+      trending: s?.trending ?? null,
     });
   }
   for (const [nsuid, id] of brIdByNsuid) {
@@ -178,13 +206,8 @@ async function main(): Promise<void> {
   }
 
   // --- Casa os jogos do Japão com os do Brasil ---
-  // Mesmo Title ID em mais de um produto JP (ex.: jogo base e "Nintendo Switch 2 Edition"):
-  // vence o da plataforma do Title ID e, entre esses, o mais barato (o primeiro da lista ganha).
-  const rank = (g: JpGame) => {
-    const titleId = tdbJp.get(g.nsuid)?.titleId;
-    return titleId && platformOf(titleId) === g.platform ? 0 : 1;
-  };
-  const jpGames = [...jp.games].sort((a, b) => rank(a) - rank(b) || a.current - b.current);
+  const jpOrder = (g: JpGame) => baseFirst(tdbJp.get(g.nsuid)?.titleId, g.platform, g.regular);
+  const jpGames = [...jp.games].sort((a, b) => compareTuples(jpOrder(a), jpOrder(b)));
 
   const jpIdByNsuid = new Map<string, string>();
   const isFreeBr = (id: string | null | undefined): id is string => {
@@ -267,6 +290,8 @@ async function main(): Promise<void> {
       image: tdb?.image ?? g.image,
       nsuidBr: null,
       nsuidJp: g.nsuid,
+      popularity: null,
+      trending: null,
     });
     jpIdByNsuid.set(g.nsuid, id);
   }

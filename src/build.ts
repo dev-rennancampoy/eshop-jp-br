@@ -25,6 +25,8 @@ type Row = {
   image: string | null;
   nsuid_br: string | null;
   nsuid_jp: string | null;
+  popularity: number | null;
+  trending: number | null;
   br_reg: number | null;
   br_cur: number | null;
   br_end: string | null;
@@ -88,13 +90,24 @@ async function main(): Promise<void> {
     )
     .all() as Row[];
 
+  // O ranking do nintendo.com mistura DLCs e pacotes; aqui vira 1..N só entre os jogos do site.
+  const denseRank = (key: 'popularity' | 'trending') =>
+    new Map(
+      rows
+        .filter((r) => r[key] != null)
+        .sort((a, b) => (a[key] as number) - (b[key] as number))
+        .map((r, i) => [r.id, i + 1]),
+    );
+  const popRank = denseRank('popularity');
+  const trendRank = denseRank('trending');
+
   const data: DataFile = {
     generatedAt: new Date().toISOString(),
     crawledAt: getMeta(db, 'crawled_at'),
     brCrawledAt: getMeta(db, 'br_crawled_at'),
     fx: { rate, source: getMeta(db, 'fx_source'), at: getMeta(db, 'fx_at') },
     defaultFeePct: config.jpExtraFeePct,
-    games: rows.map(toRec),
+    games: rows.map((r) => ({ ...toRec(r), pop: popRank.get(r.id), trend: trendRank.get(r.id) })),
   };
 
   const ids = new Set(rows.map((r) => r.id));

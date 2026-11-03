@@ -1,4 +1,4 @@
-import type { Deal, ListOptions } from './deals.ts';
+import { TOP_OPTIONS, type Deal, type ListOptions } from './deals.ts';
 import type { GameRec, HistoryEntry, Region } from './types.ts';
 
 // ---------- formatação ----------
@@ -42,7 +42,7 @@ export function gameHref(g: GameRec): string {
   return `#/jogo/${encodeURIComponent(g.id)}`;
 }
 
-export const DEFAULTS: ListOptions = { q: '', sort: 'desconto', filter: 'ofertas', scope: 'ambos', platform: '' };
+export const DEFAULTS: ListOptions = { q: '', sort: 'desconto', filter: 'todos', scope: 'ambos', platform: '', top: 0 };
 // Buscando um jogo específico, mostra tudo (não só promoções) e de qualquer país.
 export const SEARCH_DEFAULTS: ListOptions = { ...DEFAULTS, filter: 'todos', scope: 'qualquer' };
 
@@ -54,6 +54,7 @@ export function homeHref(opts: ListOptions): string {
   if (opts.filter !== base.filter) qs.set('filtro', opts.filter);
   if (opts.scope !== base.scope) qs.set('pais', opts.scope);
   if (opts.platform) qs.set('plataforma', opts.platform);
+  if (opts.top) qs.set('populares', String(opts.top));
   const s = qs.toString();
   return s ? `#/?${s}` : '#/';
 }
@@ -75,7 +76,9 @@ export function card(d: Deal): string {
   <div class="img">${img(g.img, 320, 'loading="lazy"')}${badge}</div>
   <div class="body">
     <div class="name">${esc(g.name)}</div>
-    <div><span class="chip">${esc(PLATFORM[g.platform] ?? 'Switch')}</span></div>
+    <div><span class="chip">${esc(PLATFORM[g.platform] ?? 'Switch')}</span>${
+      g.pop != null && g.pop <= 100 ? ` <span class="chip hot" title="Entre os mais populares do eShop Brasil">🔥 #${g.pop}</span>` : ''
+    }</div>
     <div class="price"><span title="${COUNTRY[d.best]}">${FLAG[d.best]}</span> ${money(d.bestPrice)} ${from}</div>
     ${note}
     ${ends ? `<span class="note">⏱ ${ends}</span>` : ''}
@@ -96,8 +99,16 @@ export function homeView(p: {
   shown: number;
   feePct: number;
   hasBr: boolean;
+  featured: Deal[];
+  featuredHref: string;
 }): string {
   const { opts, list } = p;
+  const featured = p.featured.length
+    ? `<section class="featured">
+    <div class="featured-head"><h2>🔥 Populares em promoção</h2><a href="${esc(p.featuredHref)}">Ver todos →</a></div>
+    <div class="row">${p.featured.map(card).join('')}</div>
+  </section>`
+    : '';
   const heading = opts.q
     ? `<h1>Resultados para “${esc(opts.q)}”</h1>`
     : `<h1>Melhores ofertas</h1><p class="sub">Menor preço entre o eShop do Brasil e do Japão, em reais. Desconto calculado sobre o preço cheio no Brasil.</p>`;
@@ -109,15 +120,22 @@ export function homeView(p: {
   const filters = `<form class="filters" id="filters">
     ${select('ordem', opts.sort, 'Ordenar', [
       ['desconto', 'Maior desconto'],
+      ['popdesc', 'Populares em promoção'],
       ['economia', 'Maior economia (R$)'],
       ['preco', 'Menor preço'],
       ['fim', 'Terminando antes'],
+      ['populares', 'Mais populares'],
+      ['alta', 'Em alta'],
       ['novos', 'Lançamentos'],
       ['nome', 'Nome'],
     ])}
     ${select('filtro', opts.filter, 'Filtro', [
-      ['ofertas', 'Só em promoção'],
       ['todos', 'Todos os jogos'],
+      ['ofertas', 'Só em promoção'],
+    ])}
+    ${select('populares', String(opts.top), 'Popularidade', [
+      ['0', 'Qualquer popularidade'],
+      ...TOP_OPTIONS.map((n): [string, string] => [String(n), `Top ${n} mais populares`]),
     ])}
     ${select('pais', opts.scope, 'Países', [
       ['ambos', 'À venda nos dois países'],
@@ -141,7 +159,7 @@ export function homeView(p: {
       ? `<div class="more"><button type="button" id="more">Mostrar mais (${(list.length - p.shown).toLocaleString('pt-BR')} restantes)</button></div>`
       : '';
 
-  return `${warn}${heading}${filters}${grid}${more}`;
+  return `${warn}${featured}${heading}${filters}${grid}${more}`;
 }
 
 // ---------- página do jogo ----------
@@ -209,7 +227,12 @@ export function gameView(p: {
     verdict = `<div class="verdict neutral">Só está à venda no eShop ${d.best === 'BR' ? 'do Brasil' : 'do Japão'}.</div>`;
   }
 
-  const info = [g.publisher, PLATFORM[g.platform], g.release ? `Lançamento ${fmtDate(`${g.release}T12:00:00Z`)}` : null]
+  const info = [
+    g.publisher,
+    PLATFORM[g.platform],
+    g.release ? `Lançamento ${fmtDate(`${g.release}T12:00:00Z`)}` : null,
+    g.pop != null ? `#${g.pop.toLocaleString('pt-BR')} em popularidade no eShop Brasil` : null,
+  ]
     .filter(Boolean)
     .map(esc)
     .join(' · ');

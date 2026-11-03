@@ -1,12 +1,13 @@
 // SPA com rotas por hash (funciona em qualquer hospedagem estática, inclusive em subpasta):
 //   #/?q=zelda&ordem=preco   home / busca
 //   #/jogo/<id>              página do jogo
-import { filterDeals, normalizeSearch, toDeal, type Deal, type ListOptions } from './deals.ts';
+import { SORTS_LIST, TOP_OPTIONS, filterDeals, normalizeSearch, toDeal, type Deal, type ListOptions } from './deals.ts';
 import type { DataFile, HistoryShard } from './types.ts';
 import { historyShard } from './types.ts';
 import { DEFAULTS, SEARCH_DEFAULTS, fmtDateTime, gameView, historyView, homeHref, homeView, money, notFoundView } from './views.ts';
 
 const PAGE = 48;
+const FEATURED = 12;
 const FEE_KEY = 'eshop-jp-br:taxa';
 
 const app = document.getElementById('app') as HTMLElement;
@@ -57,10 +58,11 @@ function parseHome(qs: URLSearchParams): ListOptions {
     allowed.includes(v as T) ? (v as T) : fallback;
   return {
     q,
-    sort: pick(qs.get('ordem'), ['desconto', 'preco', 'economia', 'fim', 'novos', 'nome'], base.sort),
+    sort: pick(qs.get('ordem'), SORTS_LIST, base.sort),
     filter: pick(qs.get('filtro'), ['ofertas', 'todos'], base.filter),
     scope: pick(qs.get('pais'), ['ambos', 'qualquer'], base.scope),
     platform: pick(qs.get('plataforma'), ['', 'switch', 'switch2'], ''),
+    top: (TOP_OPTIONS as readonly number[]).includes(Number(qs.get('populares'))) ? Number(qs.get('populares')) : 0,
   };
 }
 
@@ -85,7 +87,18 @@ function renderHome(): void {
   }
   if (document.activeElement !== searchInput) searchInput.value = opts.q;
   const list = filterDeals(deals, opts);
-  app.innerHTML = homeView({ opts, list, shown, feePct, hasBr: !!data.brCrawledAt });
+  // Faixa "Populares em promoção" no topo, com os mesmos filtros de país e plataforma da lista.
+  const featuredOpts: ListOptions = { ...opts, q: '', sort: 'popdesc', filter: 'todos', top: 0 };
+  const featured = opts.q || opts.sort === 'popdesc' ? [] : filterDeals(deals, featuredOpts).slice(0, FEATURED);
+  app.innerHTML = homeView({
+    opts,
+    list,
+    shown,
+    feePct,
+    hasBr: !!data.brCrawledAt,
+    featured,
+    featuredHref: homeHref(featuredOpts),
+  });
   document.title = opts.q ? `${opts.q} · eShop JP×BR` : 'Melhores ofertas · eShop JP×BR';
   window.scrollTo(0, returning ? homeScroll : 0);
 }

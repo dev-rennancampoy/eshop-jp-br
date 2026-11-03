@@ -8,7 +8,17 @@ const SEARCH_KEY = 'a29c6927638bfd8cee23993e51e721c9'; // chave pública, só de
 const URL = `https://${APP_ID}-dsn.algolia.net/1/indexes/store_game_pt_br/query`;
 const MAX_HITS = 1000; // o Algolia não devolve mais que isso por consulta, então o catálogo vai em fatias
 const RANK_WINDOW = 500;
-const ATTRS = ['nsuid', 'title', 'platformCode', 'productImageSquare', 'releaseDate', 'softwarePublisher', 'eshopDetails'];
+const ATTRS = [
+  'nsuid',
+  'title',
+  'platformCode',
+  'productImageSquare',
+  'releaseDate',
+  'softwarePublisher',
+  'eshopDetails',
+  'popularityRank',
+  'trendingRank',
+];
 
 type Hit = {
   nsuid?: string | null;
@@ -17,6 +27,8 @@ type Hit = {
   productImageSquare?: string | null;
   releaseDate?: string | null;
   softwarePublisher?: string | null;
+  popularityRank?: number | null;
+  trendingRank?: number | null;
   eshopDetails?: {
     regularPrice?: number | null;
     discountPrice?: number | null;
@@ -40,6 +52,8 @@ export type StoreGame = {
   publisher: string | null;
   releaseDate: string | null;
   image: string | null;
+  popularity: number | null; // posição nos mais populares do eShop BR (1 = mais popular), com DLCs no meio
+  trending: number | null; // posição nos "em alta"
   price: { currency: string; regular: number; current: number; saleStart: string | null; saleEnd: string | null } | null;
 };
 
@@ -81,6 +95,8 @@ function toGame(h: Hit): StoreGame | null {
     publisher: h.softwarePublisher ?? null,
     releaseDate: h.releaseDate ? h.releaseDate.slice(0, 10) : null,
     image: unwrapImage(h.productImageSquare),
+    popularity: h.popularityRank ?? null,
+    trending: h.trendingRank ?? null,
     price,
   };
 }

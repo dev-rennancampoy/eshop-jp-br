@@ -23,6 +23,7 @@ Não há dependências de runtime: Node 22.18+ roda TypeScript direto e já traz
 | Catálogo e preços do Japão | `search.nintendo.jp` (busca oficial, já traz preço cheio, preço atual, promoção, editora e lançamento) |
 | Catálogo do Brasil | [blawar/titledb](https://github.com/blawar/titledb) (`BR.pt.json`) + busca do nintendo.com/pt-br (Algolia, chave pública de busca do site), que cobre lançamentos recentes e Switch 2 |
 | Preços do Brasil | `api.ec.nintendo.com/v1/price` (API pública do eShop, 50 jogos por chamada). Se um lote falhar, vale o preço da busca do nintendo.com |
+| Popularidade | busca do nintendo.com/pt-br (`popularityRank` e `trendingRank` da loja brasileira), renumerada só entre os jogos do site |
 | Data de lançamento (BR) | titledb `US.en.json`: o nsuid das Américas é o mesmo, e a data do catálogo BR de jogos antigos é a de entrada na eShop brasileira |
 | Câmbio JPY→BRL | AwesomeAPI, com fallback no ExchangeRate-API |
 | Miniaturas | `wsrv.nl` redimensiona as imagens do eShop (~1 MB → ~15 KB) |
@@ -46,6 +47,8 @@ Se aparecer um par errado no site, adicione-o em `NOT_SAME` (`src/aliases.ts`). 
 - Em caso de empate, ganha o Brasil.
 - O desconto e a economia são medidos contra o **preço cheio no Brasil**.
 - "Só em promoção" = há promoção em algum dos dois países **e** o melhor preço fica abaixo do preço cheio no Brasil.
+- **Populares em promoção** (faixa no topo da home e ordenação): só jogos em promoção, ordenados por
+  `economia × (1 − log₁₀(posição na popularidade) / 3)`. O peso é 1 para o #1, 0,67 no #10, 0,33 no #100 e 0 do #1000 em diante.
 
 ## Deploy (GitHub Pages, gratuito)
 

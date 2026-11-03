@@ -18,6 +18,8 @@ export type GameRec = {
   nsuidJp?: string;
   br?: PriceTuple;
   jp?: PriceTuple;
+  pop?: number; // posição entre os jogos do site nos mais populares do eShop BR (1 = topo)
+  trend?: number; // idem para "em alta"
 };
 
 export type DataFile = {

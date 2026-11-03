@@ -16,6 +16,8 @@ create table if not exists game (
   image        text,
   nsuid_br     text,
   nsuid_jp     text,
+  popularity   integer,           -- posição nos mais populares do eShop BR (nintendo.com), 1 = topo
+  trending     integer,           -- posição nos "em alta"
   updated_at   text not null
 );
 
@@ -53,6 +55,11 @@ export function openDb(): DatabaseSync {
   const db = new DatabaseSync(config.dbPath);
   db.exec('pragma journal_mode = wal; pragma busy_timeout = 5000; pragma foreign_keys = on;');
   db.exec(SCHEMA);
+  // Bancos criados antes dessas colunas (o do cache do Actions, por exemplo)
+  const cols = new Set((db.prepare('pragma table_info(game)').all() as { name: string }[]).map((c) => c.name));
+  for (const col of ['popularity', 'trending']) {
+    if (!cols.has(col)) db.exec(`alter table game add column ${col} integer`);
+  }
   return db;
 }
 
