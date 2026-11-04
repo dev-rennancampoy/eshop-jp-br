@@ -10,6 +10,9 @@ export const ALIASES: [string, string, string][] = [
   ['70010000022628', '70010000030163', 'Persona 5 Strikers'],
   ['70010000044380', '70010000047451', 'Persona 4 Arena Ultimax'],
   ['70010000100151', '70010000100149', 'Persona 3 Reload'],
+  // Pacotes (coleções) com nome em japonês: pacote não casa por editora + data
+  ['70070000029947', '70070000030770', 'Super Mario Galaxy + Super Mario Galaxy 2'],
+  ['70070000018037', '70070000018036', 'Pikmin 1+2'],
 ];
 
 // Pares que o casamento automático (nome, ou editora + data de lançamento) juntou por engano:

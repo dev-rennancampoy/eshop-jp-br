@@ -25,6 +25,7 @@ type GameRow = {
   nsuidJp: string | null;
   popularity: number | null;
   trending: number | null;
+  bundle: boolean; // pacote (coleção, edição deluxe) e não jogo avulso
 };
 
 type PriceRow = {
@@ -87,16 +88,17 @@ const log = (msg: string) => console.log(`[${((Date.now() - t0) / 1000).toFixed(
 
 function saveGames(db: DatabaseSync, games: Iterable<GameRow>, now: string): void {
   const stmt = db.prepare(`
-    insert into game (id, name, name_jp, publisher, platform, release_date, image, nsuid_br, nsuid_jp, popularity, trending, updated_at)
-    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    insert into game (id, name, name_jp, publisher, platform, release_date, image, nsuid_br, nsuid_jp, popularity, trending, bundle, updated_at)
+    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     on conflict(id) do update set
       name = excluded.name, name_jp = excluded.name_jp, publisher = excluded.publisher,
       platform = excluded.platform, release_date = excluded.release_date, image = excluded.image,
       nsuid_br = excluded.nsuid_br, nsuid_jp = excluded.nsuid_jp, popularity = excluded.popularity,
-      trending = excluded.trending, updated_at = excluded.updated_at`);
+      trending = excluded.trending, bundle = excluded.bundle, updated_at = excluded.updated_at`);
   for (const g of games) {
     stmt.run(
-      g.id, g.name, g.nameJp, g.publisher, g.platform, g.releaseDate, g.image, g.nsuidBr, g.nsuidJp, g.popularity, g.trending, now,
+      g.id, g.name, g.nameJp, g.publisher, g.platform, g.releaseDate, g.image, g.nsuidBr, g.nsuidJp, g.popularity, g.trending,
+      g.bundle ? 1 : 0, now,
     );
   }
 }
@@ -213,6 +215,7 @@ async function main(): Promise<void> {
       nsuidJp: null,
       popularity: s?.popularity ?? null,
       trending: s?.trending ?? null,
+      bundle: s?.bundle ?? false,
     });
   }
   for (const [nsuid, id] of brIdByNsuid) {
@@ -264,10 +267,14 @@ async function main(): Promise<void> {
   const notSame = new Set(NOT_SAME.map(([jpNsuid, brNsuid]) => `${jpNsuid}|${brNsuid}`));
   const allowed = (g: JpGame, b: GameRow) => !notSame.has(`${g.nsuid}|${b.nsuidBr}`);
 
-  // 3) Mesmo nome e plataforma (lançamentos que o titledb ainda não tem, ex.: FINAL FANTASY VII REBIRTH)
-  const keys = (k: string | null) => (k ? [k] : []);
-  for (const [g, b] of uniquePairs(unmatched(), freeBr(), (g) => keys(nameKey(g.name, g.platform)), (b) =>
-    keys(nameKey(b.name, b.platform)),
+  // 3) Mesmo nome e plataforma (lançamentos que o titledb ainda não tem, ex.: FINAL FANTASY VII REBIRTH,
+  //    e pacotes como KINGDOM HEARTS Collection). Pacote só casa com pacote.
+  const keys = (k: string | null, bundle: boolean) => (k ? [bundle ? `${k}|pacote` : k] : []);
+  for (const [g, b] of uniquePairs(
+    unmatched(),
+    freeBr(),
+    (g) => keys(nameKey(g.name, g.platform), g.bundle),
+    (b) => keys(nameKey(b.name, b.platform), b.bundle),
   )) {
     if (allowed(g, b)) attach(g, b.id);
   }
@@ -278,12 +285,13 @@ async function main(): Promise<void> {
   for (const [g, b] of uniquePairs(
     unmatched(),
     freeBr(),
+    // Pacotes ficam de fora: a edição deluxe e o pacote de DLC saem no mesmo dia, da mesma editora.
     (g) => {
-      const group = jpPublisherGroup(g.publisher);
+      const group = g.bundle ? null : jpPublisherGroup(g.publisher);
       return group ? releaseKeys(group, g.platform, g.releaseDate) : [];
     },
     (b) => {
-      const group = brPublisherGroup(b.publisher);
+      const group = b.bundle ? null : brPublisherGroup(b.publisher);
       return group ? releaseKeys(group, b.platform, b.releaseDate, 0) : [];
     },
   )) {
@@ -294,8 +302,10 @@ async function main(): Promise<void> {
     `Casados JP <-> BR: ${byTitleId} por Title ID, ${byAlias} por apelido, ${byName} por nome, ${byRelease} por editora + lançamento`,
   );
 
-  // 5) O resto só existe no Japão
+  // 5) O resto só existe no Japão. Pacote japonês sem par no Brasil fica de fora: a busca do
+  //    Japão não diz se ele tem jogo ou só DLC.
   for (const g of unmatched()) {
+    if (g.bundle) continue;
     const tdb = tdbJp.get(g.nsuid);
     const id = tdb?.titleId ? productId(tdb.titleId, g.platform) : `jp-${g.nsuid}`;
     if (games.has(id)) continue; // outra edição do mesmo Title ID já ficou com a vaga
@@ -311,6 +321,7 @@ async function main(): Promise<void> {
       nsuidJp: g.nsuid,
       popularity: null,
       trending: null,
+      bundle: false,
     });
     jpIdByNsuid.set(g.nsuid, id);
   }
@@ -373,7 +384,7 @@ async function crawlMetacritic(db: DatabaseSync, games: Map<string, GameRow>, us
     return now - last > (isNew ? MC_REFRESH_NEW_DAYS : MC_REFRESH_DAYS) * 86_400_000;
   };
   const queue = [...games.values()]
-    .filter((g) => g.nsuidBr && g.popularity != null && due(g))
+    .filter((g) => g.nsuidBr && !g.bundle && g.popularity != null && due(g))
     .sort((a, b) => (a.popularity as number) - (b.popularity as number))
     .slice(0, MC_BUDGET);
   if (!queue.length) return;

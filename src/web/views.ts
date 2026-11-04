@@ -117,7 +117,9 @@ export function card(d: Deal): string {
   <div class="img">${img(g.img, 320, 'loading="lazy"')}${badge}${rank}</div>
   <div class="body">
     <div class="name">${esc(g.name)}</div>
-    <div class="chips"><span class="chip">${esc(PLATFORM[g.platform] ?? 'Switch')}</span>${user}</div>
+    <div class="chips"><span class="chip">${esc(PLATFORM[g.platform] ?? 'Switch')}</span>${
+       g.bundle ? '<span class="chip">Pacote</span>' : ''
+     }${user}</div>
     <div class="price"><span title="${STORE[d.best]}">${FLAG[d.best]}</span> ${money(d.bestPrice)} ${from}</div>
     ${d.best === 'AMZ' ? '<span class="note src">via Amazon JP (código digital)</span>' : ''}
     ${note}
@@ -298,6 +300,7 @@ export function gameView(p: {
   const info = [
     g.publisher,
     PLATFORM[g.platform],
+    g.bundle ? 'Pacote' : null,
     g.release ? `Lançamento ${fmtDate(`${g.release}T12:00:00Z`)}` : null,
     g.pop != null ? `#${g.pop.toLocaleString('pt-BR')} em popularidade no eShop Brasil` : null,
   ]

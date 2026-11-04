@@ -26,6 +26,7 @@ export type JpGame = {
   nsuid: string;
   name: string;
   platform: 'switch' | 'switch2';
+  bundle: boolean;
   publisher: string | null;
   releaseDate: string | null;
   image: string | null;
@@ -52,8 +53,9 @@ function jstToIso(s: string | null): string | null {
 function pageUrl(page: number): string {
   const qs = new URLSearchParams({
     opt_sshow: '1',
-    // à venda + só jogos (nsuid 7001…; DLC é 7005 e pacotes 7007)
-    fq: 'ssitu_s:onsale AND id:70010*',
+    // À venda: jogos (7001) e pacotes (7007); DLC avulsa é 7005. A busca não distingue pacote com
+    // jogo de pacote de DLC: quem decide se um pacote entra é o casamento com o Brasil (ver crawl.ts).
+    fq: 'ssitu_s:onsale AND (id:70010* OR id:70070*)',
     sort: 'sodate desc,id asc',
     limit: String(PAGE_SIZE),
     page: String(page),
@@ -71,6 +73,7 @@ function toGame(it: JpItem): JpGame | null {
     nsuid: it.nsuid,
     name,
     platform: it.hard === '05_BEE' ? 'switch2' : 'switch',
+    bundle: it.nsuid.startsWith('7007'),
     publisher: it.maker,
     releaseDate: releaseDate(it),
     image: it.iurl ? `https://img-eshop.cdn.nintendo.net/i/${it.iurl}.jpg` : null,

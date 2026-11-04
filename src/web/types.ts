@@ -14,6 +14,7 @@ export type GameRec = {
   publisher?: string;
   img?: string;
   platform: Platform;
+  bundle?: boolean; // pacote (coleção, edição deluxe)
   release?: string;
   nsuidBr?: string;
   nsuidJp?: string;

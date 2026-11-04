@@ -40,6 +40,11 @@ O nsuid é diferente em cada país. O crawler tenta, em ordem, e só aceita pare
 4. **Mesma editora japonesa grande + plataforma + lançamento (±1 dia)**: jogos com nome em japonês
    (ex.: ドンキーコング バナンザ = Donkey Kong Bananza). Só editoras mapeadas em `src/matching.ts`.
 
+Pacotes (nsuid `7007`: coleções como KINGDOM HEARTS Collection e edições deluxe) entram quando o eShop BR
+diz que contêm jogo (`dlcType` vazio ou `ROM Bundle`; `Pacote` é só DLC). Pacote só casa com pacote, por nome
+ou apelido; pacote japonês sem par fica de fora, porque a busca do Japão não diferencia pacote de jogo de
+pacote de DLC.
+
 A "Nintendo Switch 2 Edition" tem o mesmo Title ID do jogo de Switch 1, mas é outro produto com outro preço:
 vira um jogo à parte (`<Title ID>-S2`). Nas regras 3 e 4 só entram jogos com preço no Brasil (um art book da
 mesma editora e data deixaria o par ambíguo).

@@ -18,6 +18,7 @@ create table if not exists game (
   nsuid_jp     text,
   popularity   integer,           -- posição nos mais populares do eShop BR (nintendo.com), 1 = topo
   trending     integer,           -- posição nos "em alta"
+  bundle       integer,           -- 1 = pacote (coleção, edição deluxe)
   updated_at   text not null
 );
 
@@ -72,7 +73,7 @@ export function openDb(): DatabaseSync {
   const columns = (table: string) =>
     new Set((db.prepare(`pragma table_info(${table})`).all() as { name: string }[]).map((c) => c.name));
   const gameCols = columns('game');
-  for (const col of ['popularity', 'trending']) {
+  for (const col of ['popularity', 'trending', 'bundle']) {
     if (!gameCols.has(col)) db.exec(`alter table game add column ${col} integer`);
   }
   if (!columns('price').has('ref')) db.exec('alter table price add column ref text');

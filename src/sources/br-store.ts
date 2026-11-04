@@ -18,6 +18,7 @@ const ATTRS = [
   'eshopDetails',
   'popularityRank',
   'trendingRank',
+  'dlcType',
 ];
 
 type Hit = {
@@ -29,6 +30,7 @@ type Hit = {
   softwarePublisher?: string | null;
   popularityRank?: number | null;
   trendingRank?: number | null;
+  dlcType?: string | null;
   eshopDetails?: {
     regularPrice?: number | null;
     discountPrice?: number | null;
@@ -49,6 +51,7 @@ export type StoreGame = {
   nsuid: string;
   name: string;
   platform: 'switch' | 'switch2';
+  bundle: boolean;
   publisher: string | null;
   releaseDate: string | null;
   image: string | null;
@@ -75,7 +78,11 @@ function unwrapImage(url: string | null | undefined): string | null {
 function toGame(h: Hit): StoreGame | null {
   const nsuid = h.nsuid ?? '';
   const name = h.title?.trim();
-  if (!nsuid.startsWith('7001') || !name) return null; // só jogos (DLC é 7005, pacotes 7007)
+  // Jogos (7001) e pacotes que contêm jogo (7007): sem dlcType são coleções (KINGDOM HEARTS
+  // Collection, Super Mario Galaxy 1+2); "ROM Bundle" é jogo + DLC (edições deluxe).
+  // DLC avulsa (7005) e pacotes só de DLC (dlcType "Pacote") ficam de fora.
+  const bundle = nsuid.startsWith('7007') && h.dlcType !== 'Pacote' && h.dlcType !== 'Individual';
+  if (!(nsuid.startsWith('7001') || bundle) || !name) return null;
   const e = h.eshopDetails;
   let price: StoreGame['price'] = null;
   if (e?.currency === 'BRL' && e.regularPrice != null) {
@@ -92,6 +99,7 @@ function toGame(h: Hit): StoreGame | null {
     nsuid,
     name,
     platform: h.platformCode === 'NINTENDO_SWITCH_2' ? 'switch2' : 'switch',
+    bundle,
     publisher: h.softwarePublisher ?? null,
     releaseDate: h.releaseDate ? h.releaseDate.slice(0, 10) : null,
     image: unwrapImage(h.productImageSquare),

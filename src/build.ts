@@ -27,6 +27,7 @@ type Row = {
   nsuid_jp: string | null;
   popularity: number | null;
   trending: number | null;
+  bundle: number | null;
   br_reg: number | null;
   br_cur: number | null;
   br_end: string | null;
@@ -55,6 +56,7 @@ function toRec(r: Row): GameRec {
     publisher: r.publisher ?? undefined,
     img: r.image ?? undefined,
     platform: (r.platform as Platform) ?? 'switch',
+    bundle: r.bundle ? true : undefined,
     release: r.release_date ?? undefined,
     nsuidBr: r.nsuid_br ?? undefined,
     nsuidJp: r.nsuid_jp ?? undefined,
